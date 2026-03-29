@@ -30,6 +30,11 @@ const apartmentSchema = new mongoose.Schema(
 		title: { type: String, required: true, trim: true },
 		description: { type: String, required: true, trim: true },
 		transactionType: { type: String, enum: ['SALE', 'RENT'], required: true },
+		roomType: {
+			type: String,
+			enum: ['STUDIO', '1BR', '2BR', '3BR', 'PENTHOUSE', 'DUPLEX'],
+			required: true
+		},
 		price: { type: Number, required: true, min: 0 },
 		area: { type: Number, required: true, min: 0 },
 		location: { type: locationSchema, required: true },

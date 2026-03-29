@@ -8,6 +8,7 @@ const Home = () => {
   const [error, setError] = useState('');
   const [filters, setFilters] = useState({
     transactionType: '',
+    roomType: '',
     minPrice: '',
     maxPrice: '',
     minArea: '',
@@ -18,7 +19,8 @@ const Home = () => {
     try {
       setLoading(true);
       setError('');
-      const query = Object.entries(nextFilters || filters).reduce((acc, [key, value]) => {
+      const baseFilters = nextFilters || filters;
+      const query = Object.entries(baseFilters).reduce((acc, [key, value]) => {
         if (value !== '' && value !== null && typeof value !== 'undefined') {
           acc[key] = value;
         }
@@ -49,7 +51,7 @@ const Home = () => {
   };
 
   const resetFilters = async () => {
-    const next = { transactionType: '', minPrice: '', maxPrice: '', minArea: '', maxArea: '' };
+    const next = { transactionType: '', roomType: '', minPrice: '', maxPrice: '', minArea: '', maxArea: '' };
     setFilters(next);
     await fetchApartments(next);
   };
@@ -73,6 +75,20 @@ const Home = () => {
           <option value="">All Types</option>
           <option value="SALE">Sale</option>
           <option value="RENT">Rent</option>
+        </select>
+        <select
+          name="roomType"
+          value={filters.roomType}
+          onChange={onFilterChange}
+          className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+        >
+          <option value="">All Room Types</option>
+          <option value="STUDIO">STUDIO</option>
+          <option value="1BR">1BR</option>
+          <option value="2BR">2BR</option>
+          <option value="3BR">3BR</option>
+          <option value="DUPLEX">DUPLEX</option>
+          <option value="PENTHOUSE">PENTHOUSE</option>
         </select>
         <input
           name="minPrice"

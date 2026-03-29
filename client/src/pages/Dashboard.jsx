@@ -7,6 +7,7 @@ const emptyApartmentForm = {
   title: '',
   description: '',
   transactionType: 'SALE',
+  roomType: 'STUDIO',
   price: '',
   area: '',
   city: '',
@@ -85,6 +86,7 @@ const Dashboard = () => {
         title: apartmentForm.title,
         description: apartmentForm.description,
         transactionType: apartmentForm.transactionType,
+        roomType: apartmentForm.roomType,
         price: Number(apartmentForm.price),
         area: Number(apartmentForm.area),
         location: {
@@ -311,6 +313,18 @@ const Dashboard = () => {
                     <option value="SALE">SALE</option>
                     <option value="RENT">RENT</option>
                   </select>
+                  <select
+                    value={apartmentForm.roomType}
+                    onChange={(event) => setApartmentForm((prev) => ({ ...prev, roomType: event.target.value }))}
+                    className="rounded-xl border border-slate-300 px-3 py-2"
+                  >
+                    <option value="STUDIO">STUDIO</option>
+                    <option value="1BR">1BR</option>
+                    <option value="2BR">2BR</option>
+                    <option value="3BR">3BR</option>
+                    <option value="PENTHOUSE">PENTHOUSE</option>
+                    <option value="DUPLEX">DUPLEX</option>
+                  </select>
                   <input
                     placeholder="Price"
                     value={apartmentForm.price}
@@ -373,6 +387,7 @@ const Dashboard = () => {
                       <div>
                         <p className="font-bold text-slate-900">{item.title}</p>
                         <p className="text-sm text-slate-600">{item.location?.district}, {item.location?.city}</p>
+                        <p className="text-sm text-slate-600">Room Type: {item.roomType || '-'}</p>
                       </div>
                       <div className="flex flex-wrap gap-2">
                         <button

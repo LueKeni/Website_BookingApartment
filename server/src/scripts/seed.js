@@ -54,6 +54,7 @@ const runSeed = async () => {
       title: 'Riverside 2BR Apartment',
       description: 'Bright 2-bedroom apartment close to city center.',
       transactionType: 'RENT',
+      roomType: '2BR',
       price: 1200,
       area: 78,
       location: {
@@ -80,6 +81,7 @@ const runSeed = async () => {
       title: 'Urban Studio For Sale',
       description: 'Compact studio with modern design and great amenities.',
       transactionType: 'SALE',
+      roomType: 'STUDIO',
       price: 89000,
       area: 42,
       location: {

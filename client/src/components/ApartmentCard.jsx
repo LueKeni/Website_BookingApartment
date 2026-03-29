@@ -21,6 +21,7 @@ const ApartmentCard = ({ apartment }) => {
           <span className="rounded-full bg-orange-100 px-2 py-1 text-xs font-bold text-orange-700">{apartment?.transactionType}</span>
           <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{apartment?.status}</span>
         </div>
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Room Type: {apartment?.roomType || '-'}</p>
         <h3 className="text-lg font-black text-slate-900 [font-family:'Space_Grotesk',sans-serif]">{apartment?.title || 'Apartment'}</h3>
         <p className="text-sm text-slate-600">{location}</p>
         <div className="flex items-end justify-between">

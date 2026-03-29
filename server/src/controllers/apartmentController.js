@@ -1,8 +1,23 @@
 import Apartment from '../models/Apartment.js';
 
+const ROOM_TYPE_ORDER = ['STUDIO', '1BR', '2BR', '3BR', 'DUPLEX', 'PENTHOUSE'];
+
 const getApartments = async (req, res) => {
   try {
-    const { transactionType, minPrice, maxPrice, minArea, maxArea, city, district, status, agentId } = req.query;
+    const {
+      transactionType,
+      minPrice,
+      maxPrice,
+      minArea,
+      maxArea,
+      city,
+      district,
+      status,
+      agentId,
+      roomType,
+      sortBy,
+      sortOrder
+    } = req.query;
 
     const filter = {};
 
@@ -20,6 +35,10 @@ const getApartments = async (req, res) => {
 
     if (agentId) {
       filter.agentId = agentId;
+    }
+
+    if (roomType) {
+      filter.roomType = roomType;
     }
 
     if (minPrice || maxPrice) {
@@ -53,6 +72,21 @@ const getApartments = async (req, res) => {
     const apartments = await Apartment.find(filter)
       .populate('agentId', 'fullName phone avatar role status agentInfo')
       .sort({ createdAt: -1 });
+
+    if (sortBy === 'roomType') {
+      apartments.sort((a, b) => {
+        const aIndex = ROOM_TYPE_ORDER.indexOf(a.roomType);
+        const bIndex = ROOM_TYPE_ORDER.indexOf(b.roomType);
+        const safeA = aIndex === -1 ? Number.MAX_SAFE_INTEGER : aIndex;
+        const safeB = bIndex === -1 ? Number.MAX_SAFE_INTEGER : bIndex;
+
+        if (safeA === safeB) {
+          return new Date(b.createdAt) - new Date(a.createdAt);
+        }
+
+        return sortOrder === 'desc' ? safeB - safeA : safeA - safeB;
+      });
+    }
 
     return res.status(200).json({ success: true, data: apartments });
   } catch (error) {
