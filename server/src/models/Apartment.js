@@ -4,7 +4,9 @@ const locationSchema = new mongoose.Schema(
 	{
 		city: { type: String, required: true, trim: true },
 		district: { type: String, required: true, trim: true },
-		address: { type: String, required: true, trim: true }
+		address: { type: String, required: true, trim: true },
+		latitude: { type: Number, min: -90, max: 90 },
+		longitude: { type: Number, min: -180, max: 180 }
 	},
 	{ _id: false }
 );

@@ -72,6 +72,11 @@ const ApartmentDetails = () => {
   }
 
   const location = `${apartment.location.address}, ${apartment.location.district}, ${apartment.location.city}`;
+  const latitude = apartment?.location?.latitude;
+  const longitude = apartment?.location?.longitude;
+  const hasMapPin = Number.isFinite(latitude) && Number.isFinite(longitude);
+  const mapUrl = hasMapPin ? `https://www.google.com/maps?q=${latitude},${longitude}` : '';
+  const mapEmbedUrl = hasMapPin ? `https://maps.google.com/maps?q=${latitude},${longitude}&z=15&output=embed` : '';
 
   return (
     <section className="space-y-6">
@@ -98,6 +103,27 @@ const ApartmentDetails = () => {
             <p className="text-sm text-slate-700">{apartment.agentId?.phone}</p>
           </div>
         </div>
+      </div>
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-lg">
+        <h2 className="text-xl font-black text-slate-900">Map Pin</h2>
+        {hasMapPin ? (
+          <div className="mt-4 space-y-3">
+            <iframe
+              title="Apartment map pin"
+              src={mapEmbedUrl}
+              className="h-72 w-full rounded-2xl border border-slate-200"
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+            />
+            <p className="text-sm text-slate-600">Lat: {latitude} | Lng: {longitude}</p>
+            <a href={mapUrl} target="_blank" rel="noreferrer" className="text-sm font-bold text-emerald-700 hover:text-emerald-900">
+              Open in Google Maps
+            </a>
+          </div>
+        ) : (
+          <p className="mt-2 text-sm text-slate-600">Listing does not have a map pin yet.</p>
+        )}
       </div>
 
       {canBook && apartment.status === 'AVAILABLE' && (

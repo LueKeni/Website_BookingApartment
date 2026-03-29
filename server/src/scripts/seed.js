@@ -60,7 +60,9 @@ const runSeed = async () => {
       location: {
         city: 'Ho Chi Minh City',
         district: 'District 2',
-        address: '12 River Park'
+        address: '12 River Park',
+        latitude: 10.78717,
+        longitude: 106.74807
       },
       details: {
         pricePerSqm: 15.3,
@@ -87,7 +89,9 @@ const runSeed = async () => {
       location: {
         city: 'Ho Chi Minh City',
         district: 'District 7',
-        address: '88 Sunrise Avenue'
+        address: '88 Sunrise Avenue',
+        latitude: 10.73243,
+        longitude: 106.72188
       },
       details: {
         pricePerSqm: 2119,

@@ -10,7 +10,7 @@ MONGODB MODELS (Mongoose):
 2. Apartment Model:
    - agentId (ObjectId ref to User).
    - title, description, transactionType (SALE/RENT), roomType (STUDIO/1BR/2BR/3BR/PENTHOUSE/DUPLEX), price, area.
-   - location: { city, district, address }.
+   - location: { city, district, address, latitude, longitude }.
    - details: { pricePerSqm, bedrooms, bathrooms, floorNumber, buildingBlock, doorDirection, balconyDirection, furnitureStatus, legalStatus }.
    - images: [String URL].
    - status: Enum ['AVAILABLE', 'SOLD', 'RENTED', 'HIDDEN'].

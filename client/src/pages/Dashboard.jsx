@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
+import { CircleMarker, MapContainer, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.js';
 import api from '../services/api.js';
+
+const DEFAULT_MAP_CENTER = [10.7769, 106.7009];
 
 const emptyApartmentForm = {
   title: '',
@@ -13,7 +16,75 @@ const emptyApartmentForm = {
   city: '',
   district: '',
   address: '',
+  latitude: null,
+  longitude: null,
   images: ''
+};
+
+const MapClickHandler = ({ onPinSelect }) => {
+  useMapEvents({
+    click(event) {
+      const latitude = Number(event.latlng.lat.toFixed(6));
+      const longitude = Number(event.latlng.lng.toFixed(6));
+      onPinSelect({ latitude, longitude });
+    }
+  });
+
+  return null;
+};
+
+const MapViewUpdater = ({ position }) => {
+  const map = useMap();
+
+  useEffect(() => {
+    if (position) {
+      map.setView(position, 16);
+    }
+  }, [map, position]);
+
+  return null;
+};
+
+const MapPinPicker = ({ latitude, longitude, onPinSelect, onClearPin }) => {
+  const hasPin = Number.isFinite(latitude) && Number.isFinite(longitude);
+  const selectedPosition = hasPin ? [latitude, longitude] : null;
+
+  return (
+    <div className="space-y-2 md:col-span-2">
+      <p className="text-sm font-semibold text-slate-800">Map Pin</p>
+      <div className="overflow-hidden rounded-xl border border-slate-300">
+        <MapContainer
+          center={selectedPosition || DEFAULT_MAP_CENTER}
+          zoom={selectedPosition ? 16 : 12}
+          scrollWheelZoom
+          className="h-72 w-full"
+        >
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+          <MapClickHandler onPinSelect={onPinSelect} />
+          <MapViewUpdater position={selectedPosition} />
+          {selectedPosition && <CircleMarker center={selectedPosition} radius={10} pathOptions={{ color: '#ef4444', fillOpacity: 0.65 }} />}
+        </MapContainer>
+      </div>
+      <p className="text-xs text-slate-500">Click directly on the map to pin apartment location.</p>
+      {hasPin ? (
+        <div className="flex items-center justify-between gap-2 rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-700">
+          <span>Lat: {latitude} | Lng: {longitude}</span>
+          <button
+            type="button"
+            onClick={onClearPin}
+            className="rounded-md border border-slate-300 bg-white px-2 py-1 font-semibold text-slate-700"
+          >
+            Clear Pin
+          </button>
+        </div>
+      ) : (
+        <p className="text-xs font-semibold text-orange-700">No pin selected yet.</p>
+      )}
+    </div>
+  );
 };
 
 const Dashboard = () => {
@@ -82,6 +153,12 @@ const Dashboard = () => {
   const saveApartment = async (event) => {
     event.preventDefault();
     try {
+      const hasPin = Number.isFinite(apartmentForm.latitude) && Number.isFinite(apartmentForm.longitude);
+      if (!hasPin) {
+        setError('Please pin apartment location on the map.');
+        return;
+      }
+
       const payload = {
         title: apartmentForm.title,
         description: apartmentForm.description,
@@ -92,7 +169,9 @@ const Dashboard = () => {
         location: {
           city: apartmentForm.city,
           district: apartmentForm.district,
-          address: apartmentForm.address
+          address: apartmentForm.address,
+          latitude: apartmentForm.latitude,
+          longitude: apartmentForm.longitude
         },
         images: apartmentForm.images
           .split(',')
@@ -360,6 +439,14 @@ const Dashboard = () => {
                     className="rounded-xl border border-slate-300 px-3 py-2 md:col-span-2"
                     required
                   />
+                  <MapPinPicker
+                    latitude={apartmentForm.latitude}
+                    longitude={apartmentForm.longitude}
+                    onPinSelect={({ latitude, longitude }) =>
+                      setApartmentForm((prev) => ({ ...prev, latitude, longitude }))
+                    }
+                    onClearPin={() => setApartmentForm((prev) => ({ ...prev, latitude: null, longitude: null }))}
+                  />
                   <textarea
                     placeholder="Description"
                     value={apartmentForm.description}
@@ -388,6 +475,9 @@ const Dashboard = () => {
                         <p className="font-bold text-slate-900">{item.title}</p>
                         <p className="text-sm text-slate-600">{item.location?.district}, {item.location?.city}</p>
                         <p className="text-sm text-slate-600">Room Type: {item.roomType || '-'}</p>
+                        {Number.isFinite(item.location?.latitude) && Number.isFinite(item.location?.longitude) && (
+                          <p className="text-sm text-slate-600">Map Pin: {item.location?.latitude}, {item.location?.longitude}</p>
+                        )}
                       </div>
                       <div className="flex flex-wrap gap-2">
                         <button
