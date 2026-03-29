@@ -11,9 +11,13 @@ import Register from './pages/Register.jsx';
 
 const App = () => {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-white to-cyan-50 text-slate-900">
+    <div className="relative min-h-screen overflow-x-clip text-slate-900">
+      <div className="pointer-events-none fixed inset-0 -z-10">
+        <div className="absolute left-[-120px] top-[-120px] h-72 w-72 rounded-full bg-orange-200/35 blur-3xl" />
+        <div className="absolute bottom-[-90px] right-[-100px] h-72 w-72 rounded-full bg-teal-200/35 blur-3xl" />
+      </div>
       <Navbar />
-      <main className="mx-auto max-w-6xl px-4 py-8">
+      <main className="mx-auto w-full max-w-7xl px-4 py-8 md:px-6 lg:py-10">
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />

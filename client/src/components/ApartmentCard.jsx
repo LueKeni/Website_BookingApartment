@@ -1,53 +1,124 @@
 import { Link } from 'react-router-dom';
 
 const formatPrice = (value) => {
-  if (typeof value !== 'number') {
+  const amount = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(amount) || amount <= 0) {
     return 'Contact';
   }
-  return value.toLocaleString('en-US');
+  return amount.toLocaleString('en-US');
 };
 
-const ApartmentCard = ({ apartment }) => {
+const toLabel = (value) => {
+  if (typeof value !== 'string') {
+    return '-';
+  }
+
+  return value
+    .toLowerCase()
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+const ApartmentCard = ({ apartment, index = 0 }) => {
   const image = apartment?.images?.[0] || 'https://images.unsplash.com/photo-1494526585095-c41746248156?auto=format&fit=crop&w=1200&q=80';
   const location = apartment?.location
     ? `${apartment.location.address}, ${apartment.location.district}, ${apartment.location.city}`
     : 'Unknown location';
+
+  const price = typeof apartment?.price === 'number' ? apartment.price : Number(apartment?.price);
+  const area = typeof apartment?.area === 'number' ? apartment.area : Number(apartment?.area);
+  const bedrooms = typeof apartment?.details?.bedrooms === 'number' ? apartment.details.bedrooms : null;
+  const bathrooms = typeof apartment?.details?.bathrooms === 'number' ? apartment.details.bathrooms : null;
+  const isSale = apartment?.transactionType === 'SALE';
+
   const latitude = apartment?.location?.latitude;
   const longitude = apartment?.location?.longitude;
   const hasMapPin = Number.isFinite(latitude) && Number.isFinite(longitude);
   const mapUrl = hasMapPin ? `https://www.google.com/maps?q=${latitude},${longitude}` : '';
 
+  const statusClassByType = {
+    AVAILABLE: 'bg-[#dff5eb] text-[#1d6b50]',
+    SOLD: 'bg-[#fde9e9] text-[#9f3434]',
+    RENTED: 'bg-[#eceff3] text-[#4b5965]',
+    HIDDEN: 'bg-[#faefdc] text-[#9a5d1b]'
+  };
+  const statusClass = statusClassByType[apartment?.status] || 'bg-slate-200 text-slate-700';
+  const priceCaption = isSale ? 'Total price' : 'Monthly rent';
+  const areaLabel = Number.isFinite(area) ? `${area} m²` : '-';
+
   return (
-    <article className="overflow-hidden rounded-2xl border border-orange-100 bg-white shadow-md transition hover:-translate-y-0.5 hover:shadow-xl">
-      <img src={image} alt={apartment?.title || 'Apartment'} className="h-44 w-full object-cover" />
-      <div className="space-y-3 p-4">
-        <div className="flex items-center justify-between">
-          <span className="rounded-full bg-orange-100 px-2 py-1 text-xs font-bold text-orange-700">{apartment?.transactionType}</span>
-          <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{apartment?.status}</span>
+    <article
+      className="group animate-rise overflow-hidden rounded-[1.5rem] border border-white/85 bg-white/90 shadow-[0_22px_45px_-34px_rgba(15,45,63,0.9)] transition duration-300 hover:-translate-y-1.5 hover:shadow-[0_28px_48px_-24px_rgba(15,45,63,0.5)]"
+      style={{ animationDelay: `${index * 70}ms` }}
+    >
+      <div className="relative">
+        <img
+          src={image}
+          alt={apartment?.title || 'Apartment'}
+          className="h-56 w-full object-cover transition duration-500 group-hover:scale-105"
+        />
+        <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/65 via-black/35 to-transparent" />
+        <div className="absolute left-3 top-3 flex items-center gap-2">
+          <span className="rounded-full bg-white/90 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-[#173f56]">
+            {isSale ? 'For Sale' : 'For Rent'}
+          </span>
+          <span className={`rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] ${statusClass}`}>
+            {toLabel(apartment?.status)}
+          </span>
         </div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Room Type: {apartment?.roomType || '-'}</p>
-        <h3 className="text-lg font-black text-slate-900 [font-family:'Space_Grotesk',sans-serif]">{apartment?.title || 'Apartment'}</h3>
-        <p className="text-sm text-slate-600">{location}</p>
+
+        <div className="absolute right-3 top-3 rounded-xl bg-[#0f2d3f]/92 px-3 py-2 text-right text-white shadow-lg">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/70">{priceCaption}</p>
+          <p className="text-lg font-extrabold leading-none">${formatPrice(price)}</p>
+        </div>
+
         {hasMapPin && (
           <a
             href={mapUrl}
             target="_blank"
             rel="noreferrer"
-            className="inline-block text-xs font-bold text-emerald-700 hover:text-emerald-900"
+            className="absolute bottom-3 right-3 rounded-full bg-white/95 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.1em] text-[#0f2d3f] transition hover:bg-white"
           >
-            View Map Pin
+            View map
           </a>
         )}
-        <div className="flex items-end justify-between">
-          <p className="text-lg font-extrabold text-slate-900">${formatPrice(apartment?.price)}</p>
-          <p className="text-sm font-semibold text-slate-600">{apartment?.area} m2</p>
+      </div>
+
+      <div className="space-y-3.5 p-4 sm:p-5">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{toLabel(apartment?.roomType)}</p>
+        <h3 className="display-font text-[1.6rem] leading-tight text-[#0f2d3f]">{apartment?.title || 'Apartment Listing'}</h3>
+        <p className="line-clamp-2 text-sm leading-relaxed text-slate-600">{location}</p>
+
+        <div className="grid grid-cols-3 gap-2.5 text-xs font-semibold text-slate-600">
+          <div className="rounded-xl border border-[#e6edf1] bg-[#f6fafc] px-2 py-2 text-center">
+            <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Area</p>
+            <p className="text-sm text-[#173f56]">{areaLabel}</p>
+          </div>
+          <div className="rounded-xl border border-[#e6edf1] bg-[#f6fafc] px-2 py-2 text-center">
+            <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Beds</p>
+            <p className="text-sm text-[#173f56]">{bedrooms ?? '-'}</p>
+          </div>
+          <div className="rounded-xl border border-[#e6edf1] bg-[#f6fafc] px-2 py-2 text-center">
+            <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Baths</p>
+            <p className="text-sm text-[#173f56]">{bathrooms ?? '-'}</p>
+          </div>
         </div>
-        <Link
-          to={`/apartments/${apartment?._id}`}
-          className="block rounded-xl bg-slate-900 px-4 py-2 text-center text-sm font-bold text-white hover:bg-slate-700"
-        >
-          View Details
-        </Link>
+
+        <div className="flex items-end justify-between border-t border-[#edf1f4] pt-2">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{priceCaption}</p>
+            <p className="text-xl font-extrabold text-[#0f2d3f]">${formatPrice(price)}</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#7a8a96]">
+              {isSale ? 'Negotiable with owner' : 'Utilities not included'}
+            </p>
+          </div>
+          <Link
+            to={`/apartments/${apartment?._id}`}
+            className="rounded-xl bg-gradient-to-r from-[#0f2d3f] to-[#173f56] px-4 py-2 text-sm font-bold text-white transition hover:brightness-110"
+          >
+            Details
+          </Link>
+        </div>
       </div>
     </article>
   );
