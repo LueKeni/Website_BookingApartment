@@ -1,5 +1,9 @@
 import jwt from 'jsonwebtoken';
+import { randomBytes } from 'crypto';
+import { OAuth2Client } from 'google-auth-library';
 import User from '../models/User.js';
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 const buildAuthResponse = (user) => {
   const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '7d' });
@@ -80,4 +84,53 @@ const login = async (req, res) => {
   }
 };
 
-export { login, register };
+const googleLogin = async (req, res) => {
+  try {
+    const { credential } = req.body;
+
+    if (!process.env.GOOGLE_CLIENT_ID) {
+      return res.status(500).json({ success: false, message: 'GOOGLE_CLIENT_ID is not configured' });
+    }
+
+    if (!credential) {
+      return res.status(400).json({ success: false, message: 'Google credential is required' });
+    }
+
+    const ticket = await googleClient.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID
+    });
+
+    const payload = ticket.getPayload();
+    const email = payload?.email?.toLowerCase();
+
+    if (!payload || !email || !payload.email_verified) {
+      return res.status(401).json({ success: false, message: 'Invalid Google account' });
+    }
+
+    let user = await User.findOne({ email });
+
+    if (!user) {
+      user = await User.create({
+        fullName: payload.name || email.split('@')[0],
+        email,
+        avatar: payload.picture || '',
+        role: 'USER',
+        password: randomBytes(24).toString('hex')
+      });
+    } else if (!user.avatar && payload.picture) {
+      user.avatar = payload.picture;
+      await user.save();
+    }
+
+    if (user.status === 'BANNED') {
+      return res.status(403).json({ success: false, message: 'Account is banned' });
+    }
+
+    return res.status(200).json({ success: true, message: 'Google login successful', data: buildAuthResponse(user) });
+  } catch (error) {
+    return res.status(401).json({ success: false, message: 'Google login failed' });
+  }
+};
+
+export { login, register, googleLogin };
