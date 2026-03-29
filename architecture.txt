@@ -1,0 +1,26 @@
+TECH STACK:
+- Backend: Node.js, Express.js, MongoDB (Mongoose)
+- Frontend: React.js (Vite), TailwindCSS, Axios, React Router DOM
+- Authentication: JWT (JSON Web Tokens)
+
+DIRECTORY STRUCTURE:
+ApartmentBookingProject/
+├── server/
+│   ├── src/
+│   │   ├── config/db.js
+│   │   ├── controllers/ (authController.js, apartmentController.js, bookingController.js, userController.js)
+│   │   ├── middlewares/ (authMiddleware.js, errorMiddleware.js)
+│   │   ├── models/ (User.js, Apartment.js, Booking.js, Review.js)
+│   │   ├── routes/ (authRoutes.js, apartmentRoutes.js, bookingRoutes.js, userRoutes.js)
+│   │   └── server.js
+│   └── .env
+├── client/
+│   ├── src/
+│   │   ├── components/ (Navbar, Footer, ApartmentCard, Button, Input)
+│   │   ├── context/ (AuthContext.js)
+│   │   ├── pages/ (Home, Login, Register, ApartmentDetails, Dashboard, Profile)
+│   │   ├── services/ (api.js)
+│   │   ├── App.jsx
+│   │   └── main.jsx
+│   ├── tailwind.config.js
+│   └── .env

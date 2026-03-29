@@ -1,0 +1,30 @@
+MONGODB MODELS (Mongoose):
+
+1. User Model:
+   - fullName, email (unique), password (hashed), phone, avatar.
+   - role: Enum ['USER', 'AGENT', 'ADMIN'] (Default: 'USER').
+   - status: Enum ['ACTIVE', 'BANNED'].
+   - agentInfo: { location, responseRate, successDeals, availableDays: [String] } // Only used if role is AGENT.
+   - favorites: [ObjectId ref to Apartment].
+
+2. Apartment Model:
+   - agentId (ObjectId ref to User).
+   - title, description, transactionType (SALE/RENT), price, area.
+   - location: { city, district, address }.
+   - details: { pricePerSqm, bedrooms, bathrooms, floorNumber, buildingBlock, doorDirection, balconyDirection, furnitureStatus, legalStatus }.
+   - images: [String URL].
+   - status: Enum ['AVAILABLE', 'SOLD', 'RENTED', 'HIDDEN'].
+
+3. Booking Model:
+   - customerId (ObjectId ref to User).
+   - agentId (ObjectId ref to User).
+   - apartmentId (ObjectId ref to Apartment).
+   - scheduledDate (Date), scheduledTime (String).
+   - status: Enum ['PENDING', 'CONFIRMED', 'CANCELLED', 'COMPLETED'].
+   - customerNote, cancelReason.
+
+4. Review Model:
+   - customerId (ObjectId ref to User).
+   - agentId (ObjectId ref to User).
+   - bookingId (ObjectId ref to Booking).
+   - rating (Number 1-5), comment (String).
