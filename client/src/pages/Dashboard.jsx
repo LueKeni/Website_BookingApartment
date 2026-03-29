@@ -162,6 +162,15 @@ const Dashboard = () => {
     }
   };
 
+  const setUserRole = async (userId, role) => {
+    try {
+      await api.patch(`/users/${userId}/role`, { role });
+      await loadDashboardData();
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Cannot update user role');
+    }
+  };
+
   const userStats = useMemo(() => {
     const completed = bookings.filter((item) => item.status === 'COMPLETED').length;
     const pending = bookings.filter((item) => item.status === 'PENDING').length;
@@ -468,8 +477,22 @@ const Dashboard = () => {
                         <p className="text-sm text-slate-600">{item.email} | {item.role}</p>
                       </div>
                       <div className="flex items-center gap-2">
+                        <select
+                          value={item.role}
+                          onChange={(event) => setUserRole(item._id, event.target.value)}
+                          disabled={item._id === user?.id}
+                          className="rounded-lg border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <option value="USER">USER</option>
+                          <option value="AGENT">AGENT</option>
+                          <option value="ADMIN">ADMIN</option>
+                        </select>
                         <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">{item.status}</span>
-                        {item.status === 'ACTIVE' ? (
+                        {item._id === user?.id ? (
+                          <span className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-500">
+                            Current Account
+                          </span>
+                        ) : item.status === 'ACTIVE' ? (
                           <button
                             type="button"
                             onClick={() => setUserStatus(item._id, 'BANNED')}
@@ -532,6 +555,35 @@ const Dashboard = () => {
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow">
+                <h2 className="text-xl font-black text-slate-900">Booking Schedule</h2>
+                <div className="mt-4 space-y-3">
+                  {bookings.length === 0 ? (
+                    <p className="text-sm text-slate-600">No booking schedule found.</p>
+                  ) : (
+                    bookings.map((booking) => (
+                      <div
+                        key={booking._id}
+                        className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 md:flex-row md:items-center md:justify-between"
+                      >
+                        <div>
+                          <p className="font-bold text-slate-900">{booking.apartmentId?.title || 'Unknown apartment'}</p>
+                          <p className="text-sm text-slate-600">
+                            {new Date(booking.scheduledDate).toLocaleDateString()} at {booking.scheduledTime}
+                          </p>
+                          <p className="text-sm text-slate-600">
+                            User: {booking.customerId?.fullName || '-'} | Agent: {booking.agentId?.fullName || '-'}
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+                          {booking.status}
+                        </span>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             </div>
