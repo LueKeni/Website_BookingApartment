@@ -1,5 +1,6 @@
 import { createContext, createElement, useContext, useMemo, useState } from 'react';
 import api from '../services/api.js';
+import { disconnectSocket } from '../services/socket.js';
 
 const AuthContext = createContext(null);
 
@@ -52,6 +53,7 @@ const AuthProvider = ({ children }) => {
     setToken('');
     localStorage.removeItem('auth_user');
     localStorage.removeItem('auth_token');
+    disconnectSocket();
   };
 
   const value = useMemo(

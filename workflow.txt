@@ -1,24 +1,17 @@
-USER ROLES: USER, AGENT, ADMIN.
+CHAT WORKFLOW:
 
-WORKFLOWS:
-1. Authentication:
-   - All roles use the same login/register form but are redirected to different dashboards based on their role.
+1. Starting a Chat:
+   - User views `ApartmentDetail` -> Clicks "Chat with Agent".
+   - System checks if a `Conversation` already exists for this User + Agent + Apartment.
+   - If no: Create new `Conversation`. If yes: Open existing one.
+   - Redirect or Open a Mini Chatbox at the bottom right.
 
-2. Normal User Workflow:
-   - Browse apartments (filter by rent/sale, price, area).
-   - View apartment details and agent info.
-   - Click "Book Appointment" -> Select Date/Time -> Submit.
-   - Add apartments to "Favorites".
-   - View booking history.
-   - Leave a Review (1-5 stars) for the Agent ONLY AFTER a booking status is COMPLETED.
+2. Real-time Messaging:
+   - Use Socket.io to join a "Room" based on `conversationId`.
+   - When User/Agent sends a message, emit 'send_message' event.
+   - Server saves message to DB and broadcasts to the room.
 
-3. Agent (Cộng tác viên) Workflow:
-   - Dashboard: View statistics (total listings, successful deals, response rate).
-   - Manage Apartments: CRUD operations for their own listings.
-   - Manage Schedule: Set available days/times.
-   - Manage Bookings: View incoming requests, update status (PENDING -> CONFIRMED / CANCELLED -> COMPLETED).
-
-4. Admin Workflow:
-   - Dashboard: Overview of system metrics.
-   - Manage Users: View all users and agents. Ban/Unban accounts.
-   - Moderate Listings: Hide or delete inappropriate apartment listings.
+3. Message Center (Inbox):
+   - User/Agent can see a list of all conversations.
+   - Display `lastMessage` and a "New Message" badge if `isRead` is false.
+   - Clicking a conversation opens the full `ChatWindow`.

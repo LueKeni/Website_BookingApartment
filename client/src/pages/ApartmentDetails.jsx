@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import ChatBox from '../components/ChatBox.jsx';
 import { useAuth } from '../context/AuthContext.js';
 import api from '../services/api.js';
 
@@ -153,6 +154,7 @@ const ApartmentDetails = () => {
           )}
         </div>
       </div>
+      <ChatBox apartmentId={apartment._id} agentId={apartment.agentId?._id} agentName={apartment.agentId?.fullName} />
     </section>
   );
 };

@@ -52,30 +52,39 @@ VITE_API_BASE_URL=http://localhost:5000/api
 
 ## Install
 
-From workspace root:
+- Backend: Node.js, Express.js, MongoDB, Mongoose, JWT, Socket.io
+- Frontend: React (Vite), TailwindCSS, Axios, React Router DOM, Socket.io Client
 
 1. `cd server && npm install`
 2. `cd ../client && npm install`
 
-## Seed Database
-
-From server folder:
+- Use inbox to chat with users in real time
 
 1. `npm run seed`
 
 This creates test data:
 
-- ADMIN: admin@apartment.local / Password@123
-- AGENT: agent@apartment.local / Password@123
 - USER: user@apartment.local / Password@123
+
+### REAL-TIME CHAT
+
+- User can open sticky chatbox on apartment details page
+- Conversation is tracked by participants and apartmentId
+- Socket.io room per conversationId for real-time messaging
+- User and Agent can manage all conversations in Inbox page
+- Initial message fetch supports pagination (default 30, max 50)
 
 ## Run Application
 
-Use two terminals.
+- Chats: /api/chats/\*
 
-Terminal 1 (backend):
+## Chat API
 
-1. `cd server`
+- POST /api/chats/conversations/start
+- GET /api/chats/conversations
+- GET /api/chats/conversations/:id/messages?page=1&limit=30
+- POST /api/chats/conversations/:id/messages
+
 2. `npm run dev`
 
 Terminal 2 (frontend):

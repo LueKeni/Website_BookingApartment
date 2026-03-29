@@ -1,9 +1,8 @@
-CODING STANDARDS & RULES:
-1. Clean Code: Write self-documenting code. Use clear, descriptive variable and function names.
-2. NO Comments: Do not add any explanatory comments in the code. Only write code.
-3. Modularization: Keep controllers thin. Separate business logic if it gets complex.
-4. Error Handling: Use standard try/catch blocks in async functions. Return consistent JSON error responses (e.g., { success: false, message: '...' }).
-5. ES6+: Use modern JavaScript syntax (arrow functions, destructuring, template literals).
-6. State Management: Use React Context API for global state (like User Auth), and useState/useEffect for local state.
-7. Styling: Use TailwindCSS utility classes exclusively. No custom CSS unless absolutely necessary.
-8. API Client: Create a central Axios instance in `client/src/services/api.js` with interceptors to inject the JWT token.
+TECHNICAL RULES FOR CHAT:
+1. Real-time: Use Socket.io. Do not use API polling for messages.
+2. UI:
+   - Chatbox on ApartmentDetail should be a toggleable popup (sticky bottom-right).
+   - Use a scrollable message list with "Auto-scroll to bottom" when new messages arrive.
+   - Differentiate Bubble colors: User (Blue), Agent (Gray).
+3. Security: Only participants of a conversation can fetch its messages (check `authMiddleware`).
+4. Optimization: Load only the last 20-50 messages initially, use pagination for older messages.

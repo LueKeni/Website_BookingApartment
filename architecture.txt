@@ -1,26 +1,14 @@
-TECH STACK:
-- Backend: Node.js, Express.js, MongoDB (Mongoose)
-- Frontend: React.js (Vite), TailwindCSS, Axios, React Router DOM
-- Authentication: JWT (JSON Web Tokens)
+PROJECT STRUCTURE (Chat Update):
+server/src/
+├── controllers/ (..., chatController.js)
+├── models/ (..., Conversation.js, Message.js)
+├── routes/ (..., chatRoutes.js)
+├── socket/ (socket.js - Handle real-time connections)
+└── server.js (Integrate Socket.io)
 
-DIRECTORY STRUCTURE:
-ApartmentBookingProject/
-├── server/
-│   ├── src/
-│   │   ├── config/db.js
-│   │   ├── controllers/ (authController.js, apartmentController.js, bookingController.js, userController.js)
-│   │   ├── middlewares/ (authMiddleware.js, errorMiddleware.js)
-│   │   ├── models/ (User.js, Apartment.js, Booking.js, Review.js)
-│   │   ├── routes/ (authRoutes.js, apartmentRoutes.js, bookingRoutes.js, userRoutes.js)
-│   │   └── server.js
-│   └── .env
-├── client/
-│   ├── src/
-│   │   ├── components/ (Navbar, Footer, ApartmentCard, Button, Input)
-│   │   ├── context/ (AuthContext.js)
-│   │   ├── pages/ (Home, Login, Register, ApartmentDetails, Dashboard, Profile)
-│   │   ├── services/ (api.js)
-│   │   ├── App.jsx
-│   │   └── main.jsx
-│   ├── tailwind.config.js
-│   └── .env
+client/src/
+├── components/ (..., ChatBox.jsx, ChatWindow.jsx)
+├── pages/
+│   ├── common/ (..., Inbox.jsx - General message center)
+│   └── user/ (ApartmentDetail.jsx - Add 'Chat with Agent' button)
+└── services/ (socket.js - Client-side socket config)

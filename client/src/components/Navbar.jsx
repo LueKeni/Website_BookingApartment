@@ -28,6 +28,9 @@ const Navbar = () => {
               >
                 Dashboard
               </NavLink>
+              <NavLink to="/inbox" className={({ isActive }) => (isActive ? 'text-slate-900' : 'text-slate-600')}>
+                Inbox
+              </NavLink>
               <NavLink to="/profile" className={({ isActive }) => (isActive ? 'text-slate-900' : 'text-slate-600')}>
                 Profile
               </NavLink>

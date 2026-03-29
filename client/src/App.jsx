@@ -4,6 +4,7 @@ import Navbar from './components/Navbar.jsx';
 import ApartmentDetails from './pages/ApartmentDetails.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Home from './pages/Home.jsx';
+import Inbox from './pages/Inbox.jsx';
 import Login from './pages/Login.jsx';
 import Profile from './pages/Profile.jsx';
 import Register from './pages/Register.jsx';
@@ -19,6 +20,7 @@ const App = () => {
           <Route path="/register" element={<Register />} />
           <Route path="/apartments/:id" element={<ApartmentDetails />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/inbox" element={<Inbox />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
