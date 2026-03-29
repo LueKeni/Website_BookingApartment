@@ -12,6 +12,10 @@ const ApartmentCard = ({ apartment }) => {
   const location = apartment?.location
     ? `${apartment.location.address}, ${apartment.location.district}, ${apartment.location.city}`
     : 'Unknown location';
+  const latitude = apartment?.location?.latitude;
+  const longitude = apartment?.location?.longitude;
+  const hasMapPin = Number.isFinite(latitude) && Number.isFinite(longitude);
+  const mapUrl = hasMapPin ? `https://www.google.com/maps?q=${latitude},${longitude}` : '';
 
   return (
     <article className="overflow-hidden rounded-2xl border border-orange-100 bg-white shadow-md transition hover:-translate-y-0.5 hover:shadow-xl">
@@ -24,6 +28,16 @@ const ApartmentCard = ({ apartment }) => {
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Room Type: {apartment?.roomType || '-'}</p>
         <h3 className="text-lg font-black text-slate-900 [font-family:'Space_Grotesk',sans-serif]">{apartment?.title || 'Apartment'}</h3>
         <p className="text-sm text-slate-600">{location}</p>
+        {hasMapPin && (
+          <a
+            href={mapUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-block text-xs font-bold text-emerald-700 hover:text-emerald-900"
+          >
+            View Map Pin
+          </a>
+        )}
         <div className="flex items-end justify-between">
           <p className="text-lg font-extrabold text-slate-900">${formatPrice(apartment?.price)}</p>
           <p className="text-sm font-semibold text-slate-600">{apartment?.area} m2</p>
