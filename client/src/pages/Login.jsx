@@ -114,6 +114,7 @@ const Login = () => {
               onSuccess={onGoogleSuccess}
               onError={onGoogleError}
               text="signin_with"
+              locale="en"
               shape="pill"
               width="100%"
             />
