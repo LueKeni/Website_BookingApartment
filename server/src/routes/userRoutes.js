@@ -8,12 +8,13 @@ import {
 	updateUserRole
 } from '../controllers/userController.js';
 import { authorize, protect } from '../middlewares/authMiddleware.js';
+import { handleAvatarUpload } from '../middlewares/uploadMiddleware.js';
 
 const router = express.Router();
 
 router.get('/', protect, authorize('ADMIN'), getUsers);
 router.get('/profile', protect, getProfile);
-router.put('/profile', protect, updateProfile);
+router.put('/profile', protect, handleAvatarUpload, updateProfile);
 router.post('/favorites', protect, authorize('USER'), toggleFavoriteApartment);
 router.patch('/:id/status', protect, authorize('ADMIN'), toggleUserStatus);
 router.patch('/:id/role', protect, authorize('ADMIN'), updateUserRole);

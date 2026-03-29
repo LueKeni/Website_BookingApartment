@@ -18,14 +18,16 @@ const buildAuthResponse = (user) => {
       avatar: user.avatar,
       role: user.role,
       status: user.status,
-      agentInfo: user.agentInfo
+      agentInfo: user.agentInfo,
+      personalInfo: user.personalInfo,
+      favorites: user.favorites
     }
   };
 };
 
 const register = async (req, res) => {
   try {
-    const { fullName, email, password, phone, avatar, role, agentInfo } = req.body;
+    const { fullName, email, password, phone, avatar, role, agentInfo, personalInfo } = req.body;
 
     if (!fullName || !email || !password) {
       return res.status(400).json({ success: false, message: 'fullName, email and password are required' });
@@ -47,7 +49,8 @@ const register = async (req, res) => {
       phone,
       avatar,
       role: role || 'USER',
-      agentInfo: role === 'AGENT' ? agentInfo : undefined
+      agentInfo: role === 'AGENT' ? agentInfo : undefined,
+      personalInfo
     });
 
     return res.status(201).json({ success: true, message: 'Register successful', data: buildAuthResponse(user) });

@@ -11,6 +11,21 @@ const agentInfoSchema = new mongoose.Schema(
 	{ _id: false }
 );
 
+const personalInfoSchema = new mongoose.Schema(
+	{
+		dateOfBirth: { type: Date },
+		gender: {
+			type: String,
+			enum: ['MALE', 'FEMALE', 'OTHER', 'PREFER_NOT_TO_SAY']
+		},
+		occupation: { type: String, trim: true },
+		website: { type: String, trim: true },
+		address: { type: String, trim: true },
+		bio: { type: String, trim: true, maxlength: 500 }
+	},
+	{ _id: false }
+);
+
 const userSchema = new mongoose.Schema(
 	{
 		fullName: { type: String, required: true, trim: true },
@@ -30,6 +45,10 @@ const userSchema = new mongoose.Schema(
 		},
 		agentInfo: {
 			type: agentInfoSchema,
+			default: undefined
+		},
+		personalInfo: {
+			type: personalInfoSchema,
 			default: undefined
 		},
 		favorites: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Apartment' }]

@@ -41,6 +41,7 @@ const AuthProvider = ({ children }) => {
         role: profile.role,
         status: profile.status,
         agentInfo: profile.agentInfo,
+        personalInfo: profile.personalInfo,
         favorites: profile.favorites || []
       };
       updateUser(merged);
