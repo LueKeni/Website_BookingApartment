@@ -4,7 +4,8 @@ import {
 	getUsers,
 	toggleFavoriteApartment,
 	toggleUserStatus,
-	updateProfile
+	updateProfile,
+	updateUserRole
 } from '../controllers/userController.js';
 import { authorize, protect } from '../middlewares/authMiddleware.js';
 
@@ -15,5 +16,6 @@ router.get('/profile', protect, getProfile);
 router.put('/profile', protect, updateProfile);
 router.post('/favorites', protect, authorize('USER'), toggleFavoriteApartment);
 router.patch('/:id/status', protect, authorize('ADMIN'), toggleUserStatus);
+router.patch('/:id/role', protect, authorize('ADMIN'), updateUserRole);
 
 export default router;

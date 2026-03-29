@@ -79,6 +79,10 @@ const toggleUserStatus = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid status' });
     }
 
+    if (req.params.id === req.user.id) {
+      return res.status(400).json({ success: false, message: 'Cannot update your own status' });
+    }
+
     const user = await User.findById(req.params.id).select('-password');
 
     if (!user) {
@@ -89,6 +93,37 @@ const toggleUserStatus = async (req, res) => {
     await user.save();
 
     return res.status(200).json({ success: true, message: 'User status updated', data: user });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const updateUserRole = async (req, res) => {
+  try {
+    const { role } = req.body;
+    if (!['USER', 'AGENT', 'ADMIN'].includes(role)) {
+      return res.status(400).json({ success: false, message: 'Invalid role' });
+    }
+
+    if (req.params.id === req.user.id) {
+      return res.status(400).json({ success: false, message: 'Cannot update your own role' });
+    }
+
+    const user = await User.findById(req.params.id).select('-password');
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    user.role = role;
+
+    if (role !== 'AGENT') {
+      user.agentInfo = undefined;
+    }
+
+    await user.save();
+
+    return res.status(200).json({ success: true, message: 'User role updated', data: user });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -127,4 +162,4 @@ const toggleFavoriteApartment = async (req, res) => {
   }
 };
 
-export { getProfile, getUsers, toggleFavoriteApartment, toggleUserStatus, updateProfile };
+export { getProfile, getUsers, toggleFavoriteApartment, toggleUserStatus, updateProfile, updateUserRole };
