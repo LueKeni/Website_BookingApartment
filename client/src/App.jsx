@@ -1,11 +1,13 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import Footer from './components/Footer.jsx';
 import Navbar from './components/Navbar.jsx';
+import AgentProfile from './pages/AgentProfile.jsx';
 import ApartmentDetails from './pages/ApartmentDetails.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Home from './pages/Home.jsx';
 import Inbox from './pages/Inbox.jsx';
 import Login from './pages/Login.jsx';
+import RoomTypeListings from './pages/RoomTypeListings.jsx';
 import Profile from './pages/Profile.jsx';
 import Register from './pages/Register.jsx';
 
@@ -23,6 +25,8 @@ const App = () => {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/apartments/:id" element={<ApartmentDetails />} />
+          <Route path="/listings/:roomType" element={<RoomTypeListings />} />
+          <Route path="/agents/:id" element={<AgentProfile />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/inbox" element={<Inbox />} />
           <Route path="/profile" element={<Profile />} />

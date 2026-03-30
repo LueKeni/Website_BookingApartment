@@ -10,6 +10,7 @@ const Login = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
   const googleEnabled = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
+  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
   const [form, setForm] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -74,7 +75,14 @@ const Login = () => {
   };
 
   const onGoogleError = () => {
-    setError('Google login failed');
+    if (!currentOrigin) {
+      setError('Google login failed.');
+      return;
+    }
+
+    setError(
+      `Google login is not available for this origin (${currentOrigin}). Add this origin in Google Cloud Console > OAuth 2.0 Client ID > Authorized JavaScript origins.`
+    );
   };
 
   return (
@@ -114,6 +122,7 @@ const Login = () => {
               onSuccess={onGoogleSuccess}
               onError={onGoogleError}
               text="signin_with"
+              locale="en"
               shape="pill"
               width="100%"
             />

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import ChatBox from '../components/ChatBox.jsx';
 import { useAuth } from '../context/AuthContext.js';
 import api from '../services/api.js';
@@ -48,6 +48,14 @@ const formatNumberField = (value) => {
   return Number.isFinite(parsed) ? parsed.toString() : '-';
 };
 
+const getInitial = (value) => {
+  if (typeof value !== 'string' || !value.trim()) {
+    return 'A';
+  }
+
+  return value.trim().charAt(0).toUpperCase();
+};
+
 const getTodayDate = () => new Date().toISOString().slice(0, 10);
 
 const ApartmentDetails = () => {
@@ -61,6 +69,7 @@ const ApartmentDetails = () => {
   const [bookingMessage, setBookingMessage] = useState({ type: '', text: '' });
   const [submittingBooking, setSubmittingBooking] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [failedImageUrls, setFailedImageUrls] = useState([]);
 
   const canBook = useMemo(() => user?.role === 'USER', [user?.role]);
 
@@ -72,6 +81,7 @@ const ApartmentDetails = () => {
       const nextApartment = response?.data?.data;
       setApartment(nextApartment || null);
       setActiveImageIndex(0);
+      setFailedImageUrls([]);
 
       if (nextApartment?.agentId?._id) {
         const reviewResponse = await api.get(`/reviews/agent/${nextApartment.agentId._id}`);
@@ -90,14 +100,28 @@ const ApartmentDetails = () => {
     fetchDetails();
   }, [fetchDetails]);
 
+  const sourceImages = useMemo(
+    () => (apartment?.images || []).filter((item) => typeof item === 'string' && item.trim() !== ''),
+    [apartment?.images]
+  );
+
   const galleryImages = useMemo(() => {
-    const images = (apartment?.images || []).filter((item) => typeof item === 'string' && item.trim() !== '');
-    return images.length ? images : [FALLBACK_IMAGE];
-  }, [apartment?.images]);
+    const failedSet = new Set(failedImageUrls);
+    const validImages = sourceImages.filter((imageUrl) => !failedSet.has(imageUrl));
+    return validImages.length ? validImages : [FALLBACK_IMAGE];
+  }, [failedImageUrls, sourceImages]);
 
   useEffect(() => {
     setActiveImageIndex((current) => (current >= galleryImages.length ? 0 : current));
   }, [galleryImages.length]);
+
+  const removeBrokenImage = useCallback((imageUrl) => {
+    if (!imageUrl || imageUrl === FALLBACK_IMAGE) {
+      return;
+    }
+
+    setFailedImageUrls((prev) => (prev.includes(imageUrl) ? prev : [...prev, imageUrl]));
+  }, []);
 
   const averageRating = useMemo(() => {
     if (!reviews.length) {
@@ -163,7 +187,7 @@ const ApartmentDetails = () => {
         scheduledTime: bookingForm.scheduledTime,
         customerNote: bookingForm.customerNote
       });
-      setBookingMessage({ type: 'success', text: 'Appointment request submitted successfully.' });
+      setBookingMessage({ type: 'success', text: 'Booking request submitted successfully.' });
       setBookingForm({ scheduledDate: '', scheduledTime: '', customerNote: '' });
     } catch (err) {
       setBookingMessage({ type: 'error', text: err?.response?.data?.message || 'Booking failed' });
@@ -200,6 +224,16 @@ const ApartmentDetails = () => {
   const hasMapPin = Number.isFinite(latitude) && Number.isFinite(longitude);
   const mapUrl = hasMapPin ? `https://www.google.com/maps?q=${latitude},${longitude}` : '';
   const mapEmbedUrl = hasMapPin ? `https://maps.google.com/maps?q=${latitude},${longitude}&z=15&output=embed` : '';
+  const agentName = apartment?.agentId?.fullName || 'Unknown agent';
+  const agentAvatar = typeof apartment?.agentId?.avatar === 'string' ? apartment.agentId.avatar.trim() : '';
+  const agentEmail = apartment?.agentId?.email || '';
+  const agentPhone = apartment?.agentId?.phone || '';
+  const agentLocation = apartment?.agentId?.agentInfo?.location || '';
+  const agentBio = apartment?.agentId?.agentInfo?.bio || '';
+  const agentSpecialties = apartment?.agentId?.agentInfo?.specialties || [];
+  const agentAvailableDays = apartment?.agentId?.agentInfo?.availableDays || [];
+  const agentProfileUrl = apartment?.agentId?._id ? `/agents/${apartment.agentId._id}` : '';
+  const agentInitial = getInitial(agentName);
   const statusClassByType = {
     AVAILABLE: 'bg-[#dff5eb] text-[#1d6b50] border-[#c4e9d6]',
     SOLD: 'bg-[#fde9e9] text-[#9f3434] border-[#f3cbcb]',
@@ -217,6 +251,7 @@ const ApartmentDetails = () => {
               src={galleryImages[activeImageIndex]}
               alt={apartment?.title || 'Apartment'}
               className="h-[20rem] w-full object-cover md:h-[30rem]"
+              onError={() => removeBrokenImage(galleryImages[activeImageIndex])}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/25 to-transparent" />
 
@@ -267,11 +302,17 @@ const ApartmentDetails = () => {
                     index === activeImageIndex ? 'border-[#173f56] shadow-[0_10px_20px_-14px_rgba(15,45,63,1)]' : 'border-white/80 hover:border-[#c59351]'
                   }`}
                 >
-                  <img src={image} alt={`Apartment view ${index + 1}`} className="h-14 w-full object-cover" />
+                  <img
+                    src={image}
+                    alt={`Apartment view ${index + 1}`}
+                    className="h-14 w-full object-cover"
+                    onError={() => removeBrokenImage(image)}
+                  />
                 </button>
               ))}
             </div>
           )}
+
         </article>
 
         <article className="luxe-panel animate-rise rounded-[2rem] p-5 md:p-6" style={{ animationDelay: '80ms' }}>
@@ -308,19 +349,66 @@ const ApartmentDetails = () => {
 
           <div className="mt-5 rounded-2xl border border-[#d6e4dd] bg-[#edf8f4] p-4">
             <p className="text-xs font-bold uppercase tracking-[0.13em] text-[#236d56]">Listing Agent</p>
-            <p className="mt-1 text-lg font-bold text-[#133f32]">{apartment?.agentId?.fullName || 'Unknown agent'}</p>
-            <p className="text-sm font-semibold text-[#1d5f4d]">{apartment?.agentId?.phone || 'No phone available'}</p>
-            {apartment?.agentId?.agentInfo?.location && <p className="mt-1 text-xs text-[#2a6f5a]">{apartment.agentId.agentInfo.location}</p>}
-            {hasMapPin && (
-              <a
-                href={mapUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-3 inline-flex rounded-full border border-[#9dcab8] bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-[0.12em] text-[#236d56] transition hover:border-[#7db89f]"
+            {agentProfileUrl ? (
+              <Link
+                to={agentProfileUrl}
+                className="group mt-2 flex flex-wrap items-center gap-3 rounded-xl border border-[#c8dfd5] bg-white/85 px-2.5 py-2 transition hover:border-[#8dc1ad]"
               >
-                Open in Google Maps
-              </a>
+                <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-full border border-[#9dcab8] bg-white text-xl font-black text-[#236d56]">
+                  {agentAvatar ? <img src={agentAvatar} alt={agentName} className="h-full w-full object-cover" /> : agentInitial}
+                </div>
+
+                <div>
+                  <p className="text-lg font-bold text-[#133f32]">{agentName}</p>
+                  <p className="text-sm font-semibold text-[#1d5f4d]">{agentPhone || 'No phone available'}</p>
+                  {agentEmail && <p className="text-sm text-[#2a6f5a]">{agentEmail}</p>}
+                  <p className="text-xs font-semibold text-[#236d56] underline-offset-2 group-hover:underline">View agent profile</p>
+                </div>
+              </Link>
+            ) : (
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-full border border-[#9dcab8] bg-white text-xl font-black text-[#236d56]">
+                  {agentAvatar ? <img src={agentAvatar} alt={agentName} className="h-full w-full object-cover" /> : agentInitial}
+                </div>
+
+                <div>
+                  <p className="text-lg font-bold text-[#133f32]">{agentName}</p>
+                  <p className="text-sm font-semibold text-[#1d5f4d]">{agentPhone || 'No phone available'}</p>
+                  {agentEmail && <p className="text-sm text-[#2a6f5a]">{agentEmail}</p>}
+                </div>
+              </div>
             )}
+
+            {agentLocation && <p className="mt-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#2a6f5a]">Area: {agentLocation}</p>}
+
+            {agentSpecialties.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {agentSpecialties.map((item, index) => (
+                  <span key={`${item}-${index}`} className="rounded-full border border-[#b9dccc] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#1c5c49]">
+                    {item}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {agentAvailableDays.length > 0 && (
+              <p className="mt-2 text-xs text-[#2a6f5a]">Available: {agentAvailableDays.join(', ')}</p>
+            )}
+
+            {agentBio && <p className="mt-2 text-sm leading-relaxed text-[#215442]">{agentBio}</p>}
+
+            <div className="mt-4 rounded-xl border border-[#cfe1d8] bg-white/75 p-3">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#2a6f5a]">
+                Need quick help?
+              </p>
+              <ChatBox
+                apartmentId={apartment._id}
+                agentId={apartment.agentId?._id}
+                agentName={apartment.agentId?.fullName}
+                embedded
+              />
+            </div>
+
           </div>
         </article>
       </div>
@@ -464,7 +552,6 @@ const ApartmentDetails = () => {
         </div>
       </article>
 
-      <ChatBox apartmentId={apartment._id} agentId={apartment.agentId?._id} agentName={apartment.agentId?.fullName} />
     </section>
   );
 };

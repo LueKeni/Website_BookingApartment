@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import ApartmentCard from '../components/ApartmentCard.jsx';
 import api from '../services/api.js';
 
@@ -11,20 +12,53 @@ const defaultFilters = {
   maxArea: ''
 };
 
-const highlights = [
-  {
-    title: 'Verified Listings',
-    description: 'Every apartment profile is moderated with transparent pricing and legal status.'
-  },
-  {
-    title: 'Agent Direct Chat',
-    description: 'Connect with brokers instantly and schedule tours without leaving the platform.'
-  },
-  {
-    title: 'Citywide Coverage',
-    description: 'Explore apartments across central districts and emerging residential hotspots.'
+const ROOM_TYPE_ORDER = ['STUDIO', '1BR', '2BR', '3BR', 'DUPLEX', 'PENTHOUSE'];
+const APARTMENTS_PER_PAGE = 9;
+
+const buildPaginationItems = (totalPages, currentPage) => {
+  if (totalPages <= 1) {
+    return [];
   }
-];
+
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1);
+  }
+
+  const items = [1];
+  const start = Math.max(2, currentPage - 1);
+  const end = Math.min(totalPages - 1, currentPage + 1);
+
+  if (start > 2) {
+    items.push('left-ellipsis');
+  }
+
+  for (let page = start; page <= end; page += 1) {
+    items.push(page);
+  }
+
+  if (end < totalPages - 1) {
+    items.push('right-ellipsis');
+  }
+
+  items.push(totalPages);
+  return items;
+};
+
+const toLabel = (value) => {
+  if (typeof value !== 'string') {
+    return '-';
+  }
+
+  return value
+    .toLowerCase()
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+const findFirstImage = (apartment) => {
+  const images = apartment?.images || [];
+  return images.find((item) => typeof item === 'string' && item.trim() !== '') || '';
+};
 
 const fallbackShowcaseSlides = [
   {
@@ -87,14 +121,20 @@ const buildShowcaseSlides = (sourceApartments, maxSlides = 6) => {
 };
 
 const Home = () => {
+  const navigate = useNavigate();
   const [apartments, setApartments] = useState([]);
+  const [inventoryApartments, setInventoryApartments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [inventoryLoading, setInventoryLoading] = useState(true);
   const [error, setError] = useState('');
   const [filters, setFilters] = useState(defaultFilters);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalMatches, setTotalMatches] = useState(0);
   const [showcaseSlides, setShowcaseSlides] = useState(fallbackShowcaseSlides);
   const [activeSlide, setActiveSlide] = useState(0);
 
-  const fetchApartments = async (nextFilters) => {
+  const fetchApartments = async (nextFilters, nextPage = 1) => {
     try {
       setLoading(true);
       setError('');
@@ -105,13 +145,53 @@ const Home = () => {
         }
         return acc;
       }, {});
+      query.status = 'ALL';
+      query.excludeHidden = 'true';
+      query.page = nextPage;
+      query.limit = APARTMENTS_PER_PAGE;
 
       const response = await api.get('/apartments', { params: query });
-      setApartments(response?.data?.data || []);
+      const visibleApartments = (response?.data?.data || []).filter((item) => item?.status !== 'HIDDEN');
+      const pagination = response?.data?.pagination;
+
+      if (pagination) {
+        setApartments(visibleApartments);
+        setCurrentPage(pagination.page || nextPage);
+        setTotalPages(pagination.totalPages || 1);
+        setTotalMatches(pagination.totalItems ?? visibleApartments.length);
+      } else {
+        // Fallback in case backend is not restarted yet or does not return pagination metadata.
+        const fallbackTotalItems = visibleApartments.length;
+        const fallbackTotalPages = Math.max(1, Math.ceil(fallbackTotalItems / APARTMENTS_PER_PAGE));
+        const fallbackPage = Math.min(Math.max(nextPage, 1), fallbackTotalPages);
+        const sliceStart = (fallbackPage - 1) * APARTMENTS_PER_PAGE;
+        const slicedApartments = visibleApartments.slice(sliceStart, sliceStart + APARTMENTS_PER_PAGE);
+
+        setApartments(slicedApartments);
+        setCurrentPage(fallbackPage);
+        setTotalPages(fallbackTotalPages);
+        setTotalMatches(fallbackTotalItems);
+      }
     } catch (err) {
       setError(err?.response?.data?.message || 'Failed to load apartments');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchInventoryApartments = async () => {
+    try {
+      setInventoryLoading(true);
+      const response = await api.get('/apartments', {
+        params: { status: 'ALL', includeRentalStats: 'true', excludeHidden: 'true' }
+      });
+
+      const visibleApartments = (response?.data?.data || []).filter((item) => item?.status !== 'HIDDEN');
+      setInventoryApartments(visibleApartments);
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Failed to load inventory data');
+    } finally {
+      setInventoryLoading(false);
     }
   };
 
@@ -126,7 +206,8 @@ const Home = () => {
   };
 
   useEffect(() => {
-    fetchApartments(defaultFilters);
+    fetchApartments(defaultFilters, 1);
+    fetchInventoryApartments();
     fetchShowcaseSlides();
   }, []);
 
@@ -155,13 +236,30 @@ const Home = () => {
 
   const onFilterSubmit = async (event) => {
     event.preventDefault();
-    await fetchApartments(filters);
+    await fetchApartments(filters, 1);
   };
 
   const resetFilters = async () => {
     const next = { ...defaultFilters };
     setFilters(next);
-    await fetchApartments(next);
+    await fetchApartments(next, 1);
+  };
+
+  const onPageChange = async (nextPage) => {
+    if (loading || nextPage === currentPage || nextPage < 1 || nextPage > totalPages) {
+      return;
+    }
+
+    await fetchApartments(filters, nextPage);
+
+    const section = document.getElementById('all-apartments');
+    if (section) {
+      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  const viewRoomType = (roomType) => {
+    navigate(`/listings/${encodeURIComponent(roomType)}`);
   };
 
   const moveToNextSlide = () => {
@@ -181,9 +279,62 @@ const Home = () => {
   };
 
   const activeShowcaseSlide = showcaseSlides[activeSlide] || showcaseSlides[0];
+  const paginationItems = useMemo(() => buildPaginationItems(totalPages, currentPage), [totalPages, currentPage]);
+
+  const featuredRentals = useMemo(() => {
+    const rentalApartments = inventoryApartments.filter((item) => item?.transactionType === 'RENT');
+
+    if (rentalApartments.length === 0) {
+      return [];
+    }
+
+    const sorted = [...rentalApartments].sort((a, b) => {
+      const rentalDiff = Number(b?.rentalCount || 0) - Number(a?.rentalCount || 0);
+      if (rentalDiff !== 0) {
+        return rentalDiff;
+      }
+
+      return new Date(b?.createdAt || 0) - new Date(a?.createdAt || 0);
+    });
+
+    const withRentCount = sorted.filter((item) => Number(item?.rentalCount || 0) > 0);
+    return (withRentCount.length > 0 ? withRentCount : sorted).slice(0, 6);
+  }, [inventoryApartments]);
+
+  const apartmentTypeCards = useMemo(() => {
+    const grouped = inventoryApartments.reduce((acc, apartment) => {
+      const roomType = apartment?.roomType || 'OTHER';
+      if (!acc[roomType]) {
+        acc[roomType] = [];
+      }
+      acc[roomType].push(apartment);
+      return acc;
+    }, {});
+
+    const orderedKeys = [
+      ...ROOM_TYPE_ORDER,
+      ...Object.keys(grouped).filter((key) => !ROOM_TYPE_ORDER.includes(key)).sort()
+    ];
+
+    return orderedKeys
+      .filter((key) => Array.isArray(grouped[key]) && grouped[key].length > 0)
+      .map((key, index) => {
+        const items = grouped[key];
+        const imageApartment = items.find((item) => findFirstImage(item)) || items[0];
+        const image = findFirstImage(imageApartment) || fallbackShowcaseSlides[index % fallbackShowcaseSlides.length].image;
+
+        return {
+          roomType: key,
+          count: items.length,
+          availableCount: items.filter((item) => item?.status === 'AVAILABLE').length,
+          image
+        };
+      });
+  }, [inventoryApartments]);
 
   const fieldClassName =
-    'w-full rounded-md border border-[#e2d5c3] bg-white/95 px-2 py-1.5 text-[11px] text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-[#173f56] focus:ring-1 focus:ring-[#173f56]/20';
+    'w-full rounded-xl border border-[#e2d5c3] bg-white/95 px-3 py-2.5 text-sm font-medium text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-[#173f56] focus:ring-2 focus:ring-[#173f56]/20';
+  const fieldLabelClassName = 'text-xs font-semibold uppercase tracking-[0.1em] text-slate-500';
 
   return (
     <section className="space-y-9">
@@ -260,24 +411,49 @@ const Home = () => {
 
       {error && <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</p>}
 
-      <section id="featured-listings" className="space-y-4">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">Featured Inventory</p>
-            <h2 className="display-font text-3xl text-[#0f2d3f] md:text-4xl">Apartments available now</h2>
+      <section id="featured-products" className="space-y-4">
+        <div className="space-y-1">
+          <h2 className="display-font text-3xl text-[#0f2d3f] md:text-4xl">Top Rental Picks</h2>
+          <p className="text-sm text-slate-600">Featured rental apartments ranked by completed rentals.</p>
+        </div>
+
+        {inventoryLoading ? (
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, idx) => (
+              <div key={idx} className="loading-sheen h-[23rem] rounded-[1.5rem] border border-white/70 bg-white/75" />
+            ))}
           </div>
-          <p className="rounded-full border border-[#dfd2be] bg-white/85 px-4 py-2 text-sm font-semibold text-slate-700">
-            {loading ? 'Loading listings...' : `${apartments.length} properties found`}
+        ) : featuredRentals.length === 0 ? (
+          <p className="rounded-2xl border border-slate-200 bg-white px-4 py-8 text-center font-semibold text-slate-700">
+            Rental ranking data is not available yet.
           </p>
+        ) : (
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+            {featuredRentals.map((apartment, index) => (
+              <div key={apartment?._id || `featured-${index}`} className="space-y-2">
+                <ApartmentCard apartment={apartment} index={index} />
+                <p className="rounded-xl border border-[#d8e4ea] bg-[#f6fafc] px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#173f56]">
+                  Rented {Number(apartment?.rentalCount || 0)} times
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section id="all-apartments" className="space-y-4">
+        <div className="space-y-1">
+          <h2 className="display-font text-3xl text-[#0f2d3f] md:text-4xl">All Apartments</h2>
+          <p className="text-sm text-slate-600">Use filters to narrow down your search quickly.</p>
         </div>
 
         <form
           onSubmit={onFilterSubmit}
-          className="animate-rise grid w-full grid-cols-2 items-end gap-1.5 sm:grid-cols-3 lg:grid-cols-6"
+          className="animate-rise grid w-full grid-cols-2 items-end gap-2.5 sm:grid-cols-3 lg:grid-cols-6"
           style={{ animationDelay: '180ms' }}
         >
-          <label className="space-y-0.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Deal type</span>
+          <label className="space-y-1">
+            <span className={fieldLabelClassName}>Deal type</span>
             <select
               name="transactionType"
               value={filters.transactionType}
@@ -290,8 +466,8 @@ const Home = () => {
             </select>
           </label>
 
-          <label className="space-y-0.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Room type</span>
+          <label className="space-y-1">
+            <span className={fieldLabelClassName}>Room type</span>
             <select name="roomType" value={filters.roomType} onChange={onFilterChange} className={fieldClassName}>
               <option value="">Any room type</option>
               <option value="STUDIO">Studio</option>
@@ -303,8 +479,8 @@ const Home = () => {
             </select>
           </label>
 
-          <label className="space-y-0.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Min price</span>
+          <label className="space-y-1">
+            <span className={fieldLabelClassName}>Min price</span>
             <input
               name="minPrice"
               type="number"
@@ -316,8 +492,8 @@ const Home = () => {
             />
           </label>
 
-          <label className="space-y-0.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Max price</span>
+          <label className="space-y-1">
+            <span className={fieldLabelClassName}>Max price</span>
             <input
               name="maxPrice"
               type="number"
@@ -329,8 +505,8 @@ const Home = () => {
             />
           </label>
 
-          <label className="space-y-0.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Min area (m²)</span>
+          <label className="space-y-1">
+            <span className={fieldLabelClassName}>Min area (m²)</span>
             <input
               name="minArea"
               type="number"
@@ -342,8 +518,8 @@ const Home = () => {
             />
           </label>
 
-          <label className="space-y-0.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Max area (m²)</span>
+          <label className="space-y-1">
+            <span className={fieldLabelClassName}>Max area (m²)</span>
             <input
               name="maxArea"
               type="number"
@@ -355,19 +531,21 @@ const Home = () => {
             />
           </label>
 
-          <div className="col-span-2 flex flex-wrap items-center justify-between gap-1.5 pt-0.5 sm:col-span-3 lg:col-span-6">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">{apartments.length} matches</p>
-            <div className="flex flex-wrap gap-1.5">
+          <div className="col-span-2 flex flex-wrap items-center justify-between gap-2 pt-1 sm:col-span-3 lg:col-span-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+              {totalMatches} matches {totalPages > 1 ? `(Page ${currentPage}/${totalPages})` : ''}
+            </p>
+            <div className="flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={resetFilters}
-                className="rounded-full border border-[#d4c4ae] bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:border-[#c59351] hover:text-[#0f2d3f]"
+                className="rounded-full border border-[#d4c4ae] bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-[#c59351] hover:text-[#0f2d3f]"
               >
                 Clear filters
               </button>
               <button
                 type="submit"
-                className="rounded-full bg-gradient-to-r from-[#0f2d3f] to-[#173f56] px-3 py-1 text-[11px] font-semibold text-white transition hover:brightness-110"
+                className="rounded-full bg-gradient-to-r from-[#0f2d3f] to-[#173f56] px-5 py-2 text-sm font-semibold text-white transition hover:brightness-110"
               >
                 Search apartments
               </button>
@@ -386,27 +564,119 @@ const Home = () => {
             No apartments match your current filters. Try expanding your budget or area range.
           </p>
         ) : (
+          <>
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+              {apartments.map((apartment, index) => (
+                <ApartmentCard key={apartment?._id || `${apartment?.title || 'apartment'}-${index}`} apartment={apartment} index={index} />
+              ))}
+            </div>
+
+            {totalPages > 1 && (
+              <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onPageChange(currentPage - 1)}
+                  disabled={currentPage === 1 || loading}
+                  className="rounded-full border border-[#d4c4ae] bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-[#c59351] hover:text-[#0f2d3f] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Prev
+                </button>
+
+                {paginationItems.map((item, index) => {
+                  if (typeof item !== 'number') {
+                    return (
+                      <span key={`${item}-${index}`} className="px-2 text-sm font-semibold text-slate-400">
+                        ...
+                      </span>
+                    );
+                  }
+
+                  const isActive = item === currentPage;
+                  return (
+                    <button
+                      key={`page-${item}`}
+                      type="button"
+                      onClick={() => onPageChange(item)}
+                      className={`rounded-full border px-3 py-2 text-sm font-semibold transition ${
+                        isActive
+                          ? 'border-[#173f56] bg-[#173f56] text-white'
+                          : 'border-[#d4c4ae] bg-white text-slate-700 hover:border-[#c59351] hover:text-[#0f2d3f]'
+                      }`}
+                    >
+                      {item}
+                    </button>
+                  );
+                })}
+
+                <button
+                  type="button"
+                  onClick={() => onPageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages || loading}
+                  className="rounded-full border border-[#d4c4ae] bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-[#c59351] hover:text-[#0f2d3f] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </section>
+
+      <section id="apartment-types" className="space-y-4">
+        <div className="space-y-1">
+          <h2 className="display-font text-3xl text-[#0f2d3f] md:text-4xl">Browse by Apartment Type</h2>
+          <p className="text-sm text-slate-600">A clean overview of each apartment type with quick access.</p>
+        </div>
+
+        {inventoryLoading ? (
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-            {apartments.map((apartment, index) => (
-              <ApartmentCard key={apartment?._id || `${apartment?.title || 'apartment'}-${index}`} apartment={apartment} index={index} />
+            {Array.from({ length: 3 }).map((_, idx) => (
+              <div key={idx} className="loading-sheen h-[20rem] rounded-[1.5rem] border border-white/70 bg-white/75" />
+            ))}
+          </div>
+        ) : apartmentTypeCards.length === 0 ? (
+          <p className="rounded-2xl border border-slate-200 bg-white px-4 py-8 text-center font-semibold text-slate-700">
+            No apartment type data available.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+            {apartmentTypeCards.map((group) => (
+              <article
+                key={group.roomType}
+                className="overflow-hidden rounded-[1.6rem] border border-white/85 bg-white/90 shadow-[0_20px_42px_-32px_rgba(15,45,63,0.95)]"
+              >
+                <div className="relative h-56 w-full overflow-hidden">
+                  <img src={group.image} alt={toLabel(group.roomType)} className="h-full w-full object-cover" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
+                  <p className="absolute left-3 top-3 rounded-full bg-white/90 px-3 py-1 text-xs font-bold uppercase tracking-[0.12em] text-[#173f56]">
+                    {toLabel(group.roomType)}
+                  </p>
+                </div>
+
+                <div className="space-y-3 p-4">
+                  <div className="flex items-end justify-between gap-2">
+                    <div>
+                      <p className="text-lg font-bold text-[#0f2d3f]">{toLabel(group.roomType)}</p>
+                      <p className="text-sm text-slate-600">{group.count} listings</p>
+                    </div>
+                    <span className="rounded-full border border-[#dce5ec] bg-[#f6fafc] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#173f56]">
+                      {group.availableCount} available
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => viewRoomType(group.roomType)}
+                    className="w-full rounded-xl bg-[#e4b900] px-3 py-2.5 text-sm font-bold uppercase tracking-[0.12em] text-[#243241] transition hover:brightness-105"
+                  >
+                    View Listings
+                  </button>
+                </div>
+              </article>
             ))}
           </div>
         )}
       </section>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        {highlights.map((item, index) => (
-          <article
-            key={item.title}
-            className="animate-rise rounded-2xl border border-white/75 bg-gradient-to-br from-white/90 to-[#f8f3ea]/85 p-4 shadow-[0_18px_34px_-32px_rgba(15,45,63,1)]"
-            style={{ animationDelay: `${220 + index * 80}ms` }}
-          >
-            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#c59351]">0{index + 1}</p>
-            <h2 className="display-font mt-1 text-2xl text-[#173f56]">{item.title}</h2>
-            <p className="mt-2 text-sm leading-relaxed text-slate-600">{item.description}</p>
-          </article>
-        ))}
-      </div>
     </section>
   );
 };

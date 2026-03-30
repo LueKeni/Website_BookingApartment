@@ -5,6 +5,18 @@ import { useAuth } from '../context/AuthContext.js';
 import api from '../services/api.js';
 import { getSocket } from '../services/socket.js';
 
+const getUserId = (value) => {
+  if (!value) {
+    return '';
+  }
+
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  return value._id || value.id || '';
+};
+
 const Inbox = () => {
   const { isAuthenticated, user } = useAuth();
   const [conversations, setConversations] = useState([]);
@@ -39,7 +51,7 @@ const Inbox = () => {
   };
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated || user?.role === 'ADMIN') {
       return;
     }
 
@@ -50,7 +62,7 @@ const Inbox = () => {
     };
 
     run();
-  }, [isAuthenticated]);
+  }, [isAuthenticated, user?.role]);
 
   useEffect(() => {
     if (!selected?._id) {
@@ -70,9 +82,25 @@ const Inbox = () => {
       if (message.conversationId !== selected._id) {
         return;
       }
+
+      const sender = message.senderId;
       setMessages((prev) => [...prev, message]);
       setConversations((prev) =>
-        prev.map((item) => (item._id === selected._id ? { ...item, lastMessage: message.text, updatedAt: new Date().toISOString() } : item))
+        prev.map((item) =>
+          item._id === selected._id
+            ? {
+                ...item,
+                lastMessage: message.text,
+                updatedAt: new Date().toISOString(),
+                lastMessageMeta: {
+                  senderId: getUserId(sender),
+                  senderName: sender?.fullName || 'Unknown',
+                  senderAvatar: sender?.avatar || '',
+                  createdAt: message.createdAt || new Date().toISOString()
+                }
+              }
+            : item
+        )
       );
     };
 
@@ -85,6 +113,10 @@ const Inbox = () => {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (user?.role === 'ADMIN') {
+    return <Navigate to="/dashboard" replace />;
   }
 
   const sendMessage = async (event) => {
@@ -126,6 +158,11 @@ const Inbox = () => {
             ) : (
               conversations.map((item) => {
                 const other = item.participants.find((p) => p._id !== user?.id);
+                const apartmentTitle = item.apartmentId?.title || 'Apartment';
+                const apartmentDistrict = item.apartmentId?.location?.district || '';
+                const apartmentCity = item.apartmentId?.location?.city || '';
+                const apartmentLocation = [apartmentDistrict, apartmentCity].filter(Boolean).join(', ');
+                const lastSenderName = item.lastMessageMeta?.senderName || other?.fullName || 'Unknown';
                 return (
                   <button
                     key={item._id}
@@ -136,7 +173,9 @@ const Inbox = () => {
                     }`}
                   >
                     <p className="text-sm font-bold text-slate-900">{other?.fullName || 'Conversation'}</p>
-                    <p className="text-xs text-slate-600">{item.apartmentId?.title || 'Apartment'}</p>
+                    <p className="text-xs font-semibold text-[#173f56]">Room: {apartmentTitle}</p>
+                    {apartmentLocation && <p className="text-xs text-slate-500">{apartmentLocation}</p>}
+                    <p className="mt-1 text-xs text-slate-600">From: {lastSenderName}</p>
                     <p className="text-xs text-slate-500">{item.lastMessage || 'No messages yet'}</p>
                     {item.unreadCount > 0 && (
                       <span className="mt-1 inline-block rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">
@@ -154,6 +193,12 @@ const Inbox = () => {
               <>
                 <div className="mb-2">
                   <p className="text-sm font-bold text-slate-900">{selected.apartmentId?.title || 'Apartment chat'}</p>
+                  <p className="text-xs text-slate-600">
+                    {selected.apartmentId?.location?.district || '-'}, {selected.apartmentId?.location?.city || '-'}
+                  </p>
+                  <p className="text-xs text-slate-600">
+                    Sender: {selected.lastMessageMeta?.senderName || selected.participants.find((p) => p._id !== user?.id)?.fullName || 'Unknown'}
+                  </p>
                 </div>
                 <ChatWindow messages={messages} currentUserId={user?.id} />
                 <form onSubmit={sendMessage} className="mt-3 flex gap-2">

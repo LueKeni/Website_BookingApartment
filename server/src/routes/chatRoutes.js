@@ -5,11 +5,11 @@ import {
   sendMessage,
   startConversation
 } from '../controllers/chatController.js';
-import { protect } from '../middlewares/authMiddleware.js';
+import { authorize, protect } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
 
-router.use(protect);
+router.use(protect, authorize('USER', 'AGENT'));
 router.post('/conversations/start', startConversation);
 router.get('/conversations', getConversations);
 router.get('/conversations/:id/messages', getMessages);

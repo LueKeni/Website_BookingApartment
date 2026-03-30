@@ -12,7 +12,7 @@ const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     {googleClientId ? (
-      <GoogleOAuthProvider clientId={googleClientId}>
+      <GoogleOAuthProvider clientId={googleClientId} locale="en">
         <BrowserRouter>
           <AuthProvider>
             <App />

@@ -5,6 +5,10 @@ import { useAuth } from '../context/AuthContext.js';
 import api from '../services/api.js';
 
 const DEFAULT_MAP_CENTER = [10.7769, 106.7009];
+const MAX_APARTMENT_IMAGES = 8;
+const MAX_APARTMENT_IMAGE_SIZE = 5 * 1024 * 1024;
+const FALLBACK_LISTING_IMAGE =
+  'https://images.unsplash.com/photo-1494526585095-c41746248156?auto=format&fit=crop&w=1200&q=80';
 
 const emptyApartmentForm = {
   title: '',
@@ -17,8 +21,7 @@ const emptyApartmentForm = {
   district: '',
   address: '',
   latitude: null,
-  longitude: null,
-  images: ''
+  longitude: null
 };
 
 const roleMetaMap = {
@@ -108,6 +111,41 @@ const statusToneClassMap = {
 const getStatusClassName = (status) => statusToneClassMap[status] || 'bg-slate-200 text-slate-700';
 
 const getUserId = (user) => user?.id || user?._id || '';
+
+const isValidObjectId = (value) => typeof value === 'string' && /^[a-fA-F0-9]{24}$/.test(value.trim());
+
+const matchKeyword = (fields, keyword) => {
+  return fields.some((value) => {
+    if (typeof value === 'number') {
+      return String(value).includes(keyword);
+    }
+
+    return typeof value === 'string' && value.toLowerCase().includes(keyword);
+  });
+};
+
+const mergeUniqueFiles = (existingFiles, selectedFiles) => {
+  const fileMap = new Map();
+
+  [...existingFiles, ...selectedFiles].forEach((file) => {
+    if (!file) {
+      return;
+    }
+
+    const identity = `${file.name}-${file.size}-${file.lastModified}`;
+    fileMap.set(identity, file);
+  });
+
+  return Array.from(fileMap.values());
+};
+
+const getImageUrls = (images) => {
+  if (!Array.isArray(images)) {
+    return [];
+  }
+
+  return images.filter((item) => typeof item === 'string' && item.trim() !== '');
+};
 
 const StatCard = ({ label, value }) => {
   return (
@@ -211,14 +249,29 @@ const Dashboard = () => {
   const { isAuthenticated, user, refreshProfile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [bookings, setBookings] = useState([]);
   const [apartments, setApartments] = useState([]);
   const [users, setUsers] = useState([]);
   const [apartmentForm, setApartmentForm] = useState(emptyApartmentForm);
+  const [imageFiles, setImageFiles] = useState([]);
+  const [imageInputKey, setImageInputKey] = useState(0);
+  const [editingApartmentId, setEditingApartmentId] = useState('');
+  const [retainedEditingImages, setRetainedEditingImages] = useState([]);
+  const [savingApartment, setSavingApartment] = useState(false);
   const [reviewMap, setReviewMap] = useState({});
+  const [agentListingSearch, setAgentListingSearch] = useState('');
+  const [agentListingStatusFilter, setAgentListingStatusFilter] = useState('ALL');
+  const [adminUserSearch, setAdminUserSearch] = useState('');
+  const [adminRoomSearch, setAdminRoomSearch] = useState('');
 
   const role = user?.role;
   const userId = getUserId(user);
+
+  const showSuccess = (message) => {
+    setError('');
+    setSuccess(message);
+  };
 
   const loadDashboardData = async () => {
     try {
@@ -236,10 +289,22 @@ const Dashboard = () => {
       }
 
       if (role === 'AGENT') {
-        const apartmentQuery = { status: 'ALL' };
-        if (userId) {
-          apartmentQuery.agentId = userId;
+        let effectiveUserId = userId;
+        if (!isValidObjectId(effectiveUserId)) {
+          const refreshedProfile = await refreshProfile();
+          effectiveUserId = getUserId(refreshedProfile || {});
         }
+
+        if (!isValidObjectId(effectiveUserId)) {
+          setError('Invalid account session. Please sign in again.');
+          setApartments([]);
+          setBookings([]);
+          setLoading(false);
+          return;
+        }
+
+        const apartmentQuery = { status: 'ALL' };
+        apartmentQuery.agentId = effectiveUserId;
 
         const [bookingResponse, apartmentResponse] = await Promise.all([
           api.get('/bookings/me'),
@@ -262,6 +327,7 @@ const Dashboard = () => {
         setBookings(bookingResponse?.data?.data || []);
       }
     } catch (err) {
+      setSuccess('');
       setError(err?.response?.data?.message || 'Failed to load dashboard');
     } finally {
       setLoading(false);
@@ -274,12 +340,112 @@ const Dashboard = () => {
     }
   }, [isAuthenticated, role, userId]);
 
+  useEffect(() => {
+    if (error) {
+      setSuccess('');
+    }
+  }, [error]);
+
+  useEffect(() => {
+    if (!success) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      setSuccess('');
+    }, 3500);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [success]);
+
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
 
+  const onApartmentImagesChange = (event) => {
+    const selectedFiles = Array.from(event.target.files || []);
+
+    if (selectedFiles.length === 0) {
+      return;
+    }
+
+    const hasNonImageFile = selectedFiles.some((file) => !file.type.startsWith('image/'));
+    if (hasNonImageFile) {
+      setError('Only image files are allowed.');
+      event.target.value = '';
+      return;
+    }
+
+    const hasOversizedFile = selectedFiles.some((file) => file.size > MAX_APARTMENT_IMAGE_SIZE);
+    if (hasOversizedFile) {
+      setError('Each image must be 5 MB or smaller.');
+      event.target.value = '';
+      return;
+    }
+
+    const mergedFiles = mergeUniqueFiles(imageFiles, selectedFiles);
+    const existingImageCount = editingApartmentId ? retainedEditingImages.length : 0;
+
+    if (mergedFiles.length + existingImageCount > MAX_APARTMENT_IMAGES) {
+      setError(
+        editingApartmentId
+          ? `This listing already has ${existingImageCount} image(s). You can add up to ${Math.max(
+              MAX_APARTMENT_IMAGES - existingImageCount,
+              0
+            )} more.`
+          : `You can upload up to ${MAX_APARTMENT_IMAGES} images.`
+      );
+      event.target.value = '';
+      return;
+    }
+
+    setError('');
+    setImageFiles(mergedFiles);
+    event.target.value = '';
+  };
+
+  const resetApartmentEditor = () => {
+    setApartmentForm(emptyApartmentForm);
+    setImageFiles([]);
+    setImageInputKey((current) => current + 1);
+    setEditingApartmentId('');
+    setRetainedEditingImages([]);
+  };
+
+  const startEditingApartment = (apartment) => {
+    if (!apartment) {
+      return;
+    }
+
+    setEditingApartmentId(apartment._id);
+    setApartmentForm({
+      title: apartment.title || '',
+      description: apartment.description || '',
+      transactionType: apartment.transactionType || 'SALE',
+      roomType: apartment.roomType || 'STUDIO',
+      price: typeof apartment.price === 'number' ? String(apartment.price) : apartment.price || '',
+      area: typeof apartment.area === 'number' ? String(apartment.area) : apartment.area || '',
+      city: apartment.location?.city || '',
+      district: apartment.location?.district || '',
+      address: apartment.location?.address || '',
+      latitude: Number.isFinite(apartment.location?.latitude) ? apartment.location.latitude : null,
+      longitude: Number.isFinite(apartment.location?.longitude) ? apartment.location.longitude : null
+    });
+    setImageFiles([]);
+    setImageInputKey((current) => current + 1);
+    setRetainedEditingImages(getImageUrls(apartment.images));
+    setError('');
+  };
+
   const saveApartment = async (event) => {
     event.preventDefault();
+
+    if (savingApartment) {
+      return;
+    }
+
     try {
       const hasPin = Number.isFinite(apartmentForm.latitude) && Number.isFinite(apartmentForm.longitude);
       if (!hasPin) {
@@ -300,6 +466,27 @@ const Dashboard = () => {
         return;
       }
 
+      if (!editingApartmentId && imageFiles.length === 0) {
+        setError('Please upload at least one apartment image.');
+        return;
+      }
+
+      const existingImageCount = editingApartmentId ? retainedEditingImages.length : 0;
+      if (editingApartmentId && imageFiles.length > 0 && existingImageCount + imageFiles.length > MAX_APARTMENT_IMAGES) {
+        setError(
+          `This listing already has ${existingImageCount} image(s). You can add up to ${Math.max(
+            MAX_APARTMENT_IMAGES - existingImageCount,
+            0
+          )} more.`
+        );
+        return;
+      }
+
+      if (editingApartmentId && existingImageCount + imageFiles.length === 0) {
+        setError('Please keep at least one image or upload new images before saving.');
+        return;
+      }
+
       const payload = {
         title: apartmentForm.title,
         description: apartmentForm.description,
@@ -313,18 +500,50 @@ const Dashboard = () => {
           address: apartmentForm.address,
           latitude: apartmentForm.latitude,
           longitude: apartmentForm.longitude
-        },
-        images: apartmentForm.images
-          .split(',')
-          .map((item) => item.trim())
-          .filter(Boolean)
+        }
       };
 
-      await api.post('/apartments', payload);
-      setApartmentForm(emptyApartmentForm);
+      if (editingApartmentId) {
+        payload.images = retainedEditingImages;
+      }
+
+      const didUpdate = Boolean(editingApartmentId);
+      setSavingApartment(true);
+
+      if (editingApartmentId) {
+        if (imageFiles.length > 0) {
+          const formData = new FormData();
+          formData.append('payload', JSON.stringify(payload));
+          imageFiles.forEach((file) => {
+            formData.append('images', file);
+          });
+
+          await api.put(`/apartments/${editingApartmentId}`, formData);
+        } else {
+          await api.put(`/apartments/${editingApartmentId}`, payload);
+        }
+      } else {
+        const formData = new FormData();
+        formData.append('payload', JSON.stringify(payload));
+        imageFiles.forEach((file) => {
+          formData.append('images', file);
+        });
+
+        await api.post('/apartments', formData);
+      }
+
+      resetApartmentEditor();
       await loadDashboardData();
+      showSuccess(
+        didUpdate
+          ? `Updated listing "${payload.title}" successfully.`
+          : `Added listing "${payload.title}" successfully.`
+      );
     } catch (err) {
-      setError(err?.response?.data?.message || 'Cannot create apartment');
+      setSuccess('');
+      setError(err?.response?.data?.message || 'Cannot save apartment');
+    } finally {
+      setSavingApartment(false);
     }
   };
 
@@ -332,7 +551,19 @@ const Dashboard = () => {
     try {
       await api.patch(`/apartments/${apartmentId}/status`, { status });
       await loadDashboardData();
+      if (status === 'AVAILABLE') {
+        showSuccess('Listing is now available.');
+        return;
+      }
+
+      if (status === 'HIDDEN') {
+        showSuccess('Listing hidden successfully.');
+        return;
+      }
+
+      showSuccess('Listing status updated successfully.');
     } catch (err) {
+      setSuccess('');
       setError(err?.response?.data?.message || 'Cannot update apartment status');
     }
   };
@@ -341,7 +572,9 @@ const Dashboard = () => {
     try {
       await api.delete(`/apartments/${apartmentId}`);
       await loadDashboardData();
+      showSuccess('Listing deleted successfully.');
     } catch (err) {
+      setSuccess('');
       setError(err?.response?.data?.message || 'Cannot delete apartment');
     }
   };
@@ -351,7 +584,24 @@ const Dashboard = () => {
       const payload = status === 'CANCELLED' ? { status, cancelReason: 'Cancelled by operator' } : { status };
       await api.patch(`/bookings/${bookingId}/status`, payload);
       await loadDashboardData();
+      if (status === 'CONFIRMED') {
+        showSuccess('Booking confirmed successfully.');
+        return;
+      }
+
+      if (status === 'CANCELLED') {
+        showSuccess('Booking cancelled successfully.');
+        return;
+      }
+
+      if (status === 'COMPLETED') {
+        showSuccess('Booking marked as completed.');
+        return;
+      }
+
+      showSuccess('Booking status updated successfully.');
     } catch (err) {
+      setSuccess('');
       setError(err?.response?.data?.message || 'Cannot update booking status');
     }
   };
@@ -360,7 +610,9 @@ const Dashboard = () => {
     try {
       await api.post('/users/favorites', { apartmentId });
       await refreshProfile();
+      showSuccess('Favorites updated successfully.');
     } catch (err) {
+      setSuccess('');
       setError(err?.response?.data?.message || 'Cannot update favorites');
     }
   };
@@ -376,7 +628,9 @@ const Dashboard = () => {
       await api.post('/reviews', { bookingId, rating: safeRating, comment });
       setReviewMap((prev) => ({ ...prev, [bookingId]: { rating: '', comment: '' } }));
       await loadDashboardData();
+      showSuccess('Review submitted successfully.');
     } catch (err) {
+      setSuccess('');
       setError(err?.response?.data?.message || 'Cannot submit review');
     }
   };
@@ -385,7 +639,19 @@ const Dashboard = () => {
     try {
       await api.patch(`/users/${userId}/status`, { status });
       await loadDashboardData();
+      if (status === 'BANNED') {
+        showSuccess('User banned successfully.');
+        return;
+      }
+
+      if (status === 'ACTIVE') {
+        showSuccess('User unbanned successfully.');
+        return;
+      }
+
+      showSuccess('User status updated successfully.');
     } catch (err) {
+      setSuccess('');
       setError(err?.response?.data?.message || 'Cannot update user status');
     }
   };
@@ -394,7 +660,9 @@ const Dashboard = () => {
     try {
       await api.patch(`/users/${userId}/role`, { role });
       await loadDashboardData();
+      showSuccess('User role updated successfully.');
     } catch (err) {
+      setSuccess('');
       setError(err?.response?.data?.message || 'Cannot update user role');
     }
   };
@@ -422,6 +690,130 @@ const Dashboard = () => {
     };
   }, [users, apartments, bookings]);
 
+  const filteredUsers = useMemo(() => {
+    const keyword = adminUserSearch.trim().toLowerCase();
+
+    if (!keyword) {
+      return users;
+    }
+
+    return users.filter((item) =>
+      matchKeyword(
+        [
+          item.fullName,
+          item.email,
+          item.phone,
+          item.role,
+          item.status,
+          item.agentInfo?.location
+        ],
+        keyword
+      )
+    );
+  }, [users, adminUserSearch]);
+
+  const filteredAgentApartments = useMemo(() => {
+    const keyword = agentListingSearch.trim().toLowerCase();
+
+    return apartments.filter((item) => {
+      const statusMatches = agentListingStatusFilter === 'ALL' || item.status === agentListingStatusFilter;
+      if (!statusMatches) {
+        return false;
+      }
+
+      if (!keyword) {
+        return true;
+      }
+
+      return matchKeyword(
+        [
+          item.title,
+          item.description,
+          item.transactionType,
+          item.roomType,
+          item.status,
+          item.price,
+          item.area,
+          item.location?.city,
+          item.location?.district,
+          item.location?.address
+        ],
+        keyword
+      );
+    });
+  }, [apartments, agentListingSearch, agentListingStatusFilter]);
+
+  const filteredAdminApartments = useMemo(() => {
+    const keyword = adminRoomSearch.trim().toLowerCase();
+
+    if (!keyword) {
+      return apartments;
+    }
+
+    return apartments.filter((item) =>
+      matchKeyword(
+        [
+          item.title,
+          item.description,
+          item.transactionType,
+          item.roomType,
+          item.status,
+          item.price,
+          item.area,
+          item.location?.city,
+          item.location?.district,
+          item.location?.address,
+          item.agentId?.fullName
+        ],
+        keyword
+      )
+    );
+  }, [apartments, adminRoomSearch]);
+
+  const currentEditingApartment = useMemo(() => {
+    if (!editingApartmentId) {
+      return null;
+    }
+
+    return apartments.find((item) => item._id === editingApartmentId) || null;
+  }, [apartments, editingApartmentId]);
+
+  const selectedImagePreviews = useMemo(
+    () => imageFiles.map((file) => ({
+      key: `${file.name}-${file.size}-${file.lastModified}`,
+      name: file.name,
+      url: URL.createObjectURL(file)
+    })),
+    [imageFiles]
+  );
+
+  useEffect(() => {
+    return () => {
+      selectedImagePreviews.forEach((item) => {
+        URL.revokeObjectURL(item.url);
+      });
+    };
+  }, [selectedImagePreviews]);
+
+  const existingEditingImages = useMemo(
+    () => retainedEditingImages,
+    [retainedEditingImages]
+  );
+
+  const hasRemovedEditingImages = useMemo(() => {
+    const initialImages = getImageUrls(currentEditingApartment?.images);
+    return existingEditingImages.length < initialImages.length;
+  }, [currentEditingApartment?.images, existingEditingImages.length]);
+
+  const removeRetainedEditingImage = (imageIndex) => {
+    setRetainedEditingImages((prev) => prev.filter((_, index) => index !== imageIndex));
+  };
+
+  const restoreRetainedEditingImages = () => {
+    setRetainedEditingImages(getImageUrls(currentEditingApartment?.images));
+    setError('');
+  };
+
   const roleMeta = roleMetaMap[role] || {
     eyebrow: 'Workspace',
     title: 'Manage your activity',
@@ -448,6 +840,18 @@ const Dashboard = () => {
         <p className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
           {error}
         </p>
+      )}
+
+      {success && (
+        <p className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+          {success}
+        </p>
+      )}
+
+      {success && (
+        <div className="fixed bottom-5 right-5 z-40 max-w-sm rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-emerald-700 shadow-[0_14px_35px_-18px_rgba(16,185,129,0.75)]">
+          {success}
+        </div>
       )}
 
       {loading ? (
@@ -556,8 +960,22 @@ const Dashboard = () => {
                 <StatCard label="Response Rate" value={`${agentStats.responseRate}%`} />
               </div>
 
-              <Panel title="Create Listing" description="Publish a new apartment listing with precise map location.">
-                <form onSubmit={saveApartment} className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <Panel
+                title={editingApartmentId ? 'Edit Listing' : 'Create Listing'}
+                description={
+                  editingApartmentId
+                    ? 'Update apartment information. Add more images to extend the gallery (up to 8 images total).'
+                    : 'Publish a new apartment listing with precise map location.'
+                }
+                action={
+                  editingApartmentId ? (
+                    <button type="button" onClick={resetApartmentEditor} className={subtleButtonClass}>
+                      Cancel Editing
+                    </button>
+                  ) : null
+                }
+              >
+                <form id="listing-editor" onSubmit={saveApartment} className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <label className="space-y-1">
                     <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Listing title</span>
                     <input
@@ -679,76 +1097,248 @@ const Dashboard = () => {
                   </label>
 
                   <label className="space-y-1 md:col-span-2">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Image URLs</span>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Apartment Images</span>
                     <input
-                      placeholder="Comma separated URLs"
-                      value={apartmentForm.images}
-                      onChange={(event) => setApartmentForm((prev) => ({ ...prev, images: event.target.value }))}
-                      className={fieldClassName}
+                      key={imageInputKey}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={onApartmentImagesChange}
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-[#0f2d3f] file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white"
                     />
+                    <p className="text-xs text-slate-500">
+                      {imageFiles.length > 0
+                        ? `${imageFiles.length} new image(s) selected`
+                        : 'Upload up to 8 images, max 5 MB per image.'}
+                    </p>
+                    {imageFiles.length > 0 && (
+                      <p className="text-xs text-slate-500">
+                        {imageFiles.slice(0, 3).map((file) => file.name).join(', ')}
+                        {imageFiles.length > 3 ? ` +${imageFiles.length - 3} more` : ''}
+                      </p>
+                    )}
+
+                    {editingApartmentId && imageFiles.length === 0 && (
+                      <p className="text-xs text-slate-500">Current images: {existingEditingImages.length}. Add new files to append more images.</p>
+                    )}
+
+                    {editingApartmentId && existingEditingImages.length > 0 && (
+                      <div className="mt-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Current Gallery ({existingEditingImages.length})
+                          </p>
+                          {hasRemovedEditingImages && (
+                            <button
+                              type="button"
+                              onClick={restoreRetainedEditingImages}
+                              className="rounded-full border border-slate-300 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700 transition hover:border-slate-400"
+                            >
+                              Restore removed images
+                            </button>
+                          )}
+                        </div>
+                        <div className="mt-2 grid grid-cols-4 gap-2 sm:grid-cols-6">
+                          {existingEditingImages.slice(0, MAX_APARTMENT_IMAGES).map((imageUrl, imageIndex) => (
+                            <div key={`${imageUrl}-${imageIndex}`} className="relative">
+                              <img
+                                src={imageUrl}
+                                alt={`Current apartment ${imageIndex + 1}`}
+                                className="h-16 w-full rounded-lg border border-slate-200 object-cover"
+                                onError={(event) => {
+                                  event.currentTarget.onerror = null;
+                                  event.currentTarget.src = FALLBACK_LISTING_IMAGE;
+                                }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => removeRetainedEditingImage(imageIndex)}
+                                className="absolute -right-1 -top-1 inline-flex h-5 w-5 items-center justify-center rounded-full border border-white bg-rose-600 text-xs font-bold text-white shadow-sm transition hover:bg-rose-700"
+                                aria-label={`Remove current image ${imageIndex + 1}`}
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {editingApartmentId && existingEditingImages.length === 0 && (
+                      <p className="text-xs font-semibold text-amber-700">
+                        You removed all current images. Please upload at least one new image before saving.
+                      </p>
+                    )}
+
+                    {selectedImagePreviews.length > 0 && (
+                      <div className="mt-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          New Images To Upload ({selectedImagePreviews.length})
+                        </p>
+                        <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
+                          {selectedImagePreviews.map((imageItem) => (
+                            <figure key={imageItem.key} className="space-y-1">
+                              <img
+                                src={imageItem.url}
+                                alt={imageItem.name}
+                                className="h-16 w-full rounded-lg border border-slate-200 object-cover"
+                              />
+                              <figcaption className="truncate text-[11px] text-slate-500">{imageItem.name}</figcaption>
+                            </figure>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </label>
 
                   <div className="md:col-span-2">
-                    <button type="submit" className={primaryButtonClass}>
-                      Add Listing
+                    <button
+                      type="submit"
+                      disabled={savingApartment}
+                      className={`${primaryButtonClass} disabled:cursor-not-allowed disabled:opacity-70`}
+                    >
+                      {savingApartment
+                        ? editingApartmentId
+                          ? 'Saving Changes...'
+                          : 'Adding Listing...'
+                        : editingApartmentId
+                          ? 'Save Changes'
+                          : 'Add Listing'}
                     </button>
                   </div>
                 </form>
               </Panel>
 
-              <Panel title="Manage Listings" description="Control visibility and remove outdated properties.">
+              <Panel
+                title="Manage Listings"
+                description="Control visibility and remove outdated properties."
+                action={
+                  <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center">
+                    <input
+                      type="text"
+                      value={agentListingSearch}
+                      onChange={(event) => setAgentListingSearch(event.target.value)}
+                      placeholder="Search title, district, room type..."
+                      className={`${fieldClassName} md:min-w-[16rem]`}
+                    />
+
+                    <select
+                      value={agentListingStatusFilter}
+                      onChange={(event) => setAgentListingStatusFilter(event.target.value)}
+                      className={`${fieldClassName} md:w-auto`}
+                    >
+                      <option value="ALL">All statuses</option>
+                      <option value="AVAILABLE">Available</option>
+                      <option value="HIDDEN">Hidden</option>
+                      <option value="SOLD">Sold</option>
+                      <option value="RENTED">Rented</option>
+                    </select>
+
+                    {(agentListingSearch.trim() || agentListingStatusFilter !== 'ALL') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAgentListingSearch('');
+                          setAgentListingStatusFilter('ALL');
+                        }}
+                        className={subtleButtonClass}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                }
+              >
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                  Showing {filteredAgentApartments.length} of {apartments.length} listing(s)
+                </p>
                 <div className="space-y-3">
-                  {apartments.length === 0 ? (
+                  {filteredAgentApartments.length === 0 ? (
                     <p className="rounded-2xl border border-slate-200 bg-white px-4 py-6 text-center text-sm font-semibold text-slate-600">
-                      No listings found for your account yet.
+                      {agentListingSearch.trim() || agentListingStatusFilter !== 'ALL'
+                        ? 'No listings match your current filters.'
+                        : 'No listings found for your account yet.'}
                     </p>
                   ) : (
-                    apartments.map((item) => (
-                      <article
-                        key={item._id}
-                        className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 md:flex-row md:items-center md:justify-between"
-                      >
-                        <div className="space-y-1">
-                          <p className="text-lg font-bold text-slate-900">{item.title}</p>
-                          <p className="text-sm text-slate-600">
-                            {item.location?.district || '-'}, {item.location?.city || '-'}
-                          </p>
-                          <p className="text-sm text-slate-600">
-                            {toTitleCase(item.transactionType)} | {toTitleCase(item.roomType)} | {formatPrice(item.price)}
-                          </p>
-                          {Number.isFinite(item.location?.latitude) && Number.isFinite(item.location?.longitude) && (
-                            <p className="text-sm text-slate-600">
-                              Map Pin: {item.location.latitude}, {item.location.longitude}
-                            </p>
-                          )}
-                        </div>
+                    filteredAgentApartments.map((item) => {
+                      const listingImages = getImageUrls(item.images);
+                      const coverImage = listingImages[0] || FALLBACK_LISTING_IMAGE;
 
-                        <div className="flex flex-wrap items-center gap-2">
-                          <StatusBadge status={item.status} />
-                          <button
-                            type="button"
-                            onClick={() => setApartmentStatus(item._id, 'AVAILABLE')}
-                            className={subtleButtonClass}
-                          >
-                            Set Available
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setApartmentStatus(item._id, 'HIDDEN')}
-                            className={subtleButtonClass}
-                          >
-                            Hide
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => deleteApartment(item._id)}
-                            className={dangerButtonClass}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </article>
-                    ))
+                      return (
+                        <article
+                          key={item._id}
+                          className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 md:flex-row md:items-center md:justify-between"
+                        >
+                          <div className="flex min-w-0 items-start gap-3">
+                            <img
+                              src={coverImage}
+                              alt={item.title || 'Listing image'}
+                              className="h-20 w-28 shrink-0 rounded-xl border border-slate-200 object-cover"
+                              onError={(event) => {
+                                event.currentTarget.onerror = null;
+                                event.currentTarget.src = FALLBACK_LISTING_IMAGE;
+                              }}
+                            />
+
+                            <div className="min-w-0 space-y-1">
+                              <p className="text-lg font-bold text-slate-900">{item.title}</p>
+                              <p className="text-sm text-slate-600">
+                                {item.location?.district || '-'}, {item.location?.city || '-'}
+                              </p>
+                              <p className="text-sm text-slate-600">
+                                {toTitleCase(item.transactionType)} | {toTitleCase(item.roomType)} | {formatPrice(item.price)}
+                              </p>
+                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Images: {listingImages.length}</p>
+                              {Number.isFinite(item.location?.latitude) && Number.isFinite(item.location?.longitude) && (
+                                <p className="text-sm text-slate-600">
+                                  Map Pin: {item.location.latitude}, {item.location.longitude}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            <StatusBadge status={item.status} />
+                            <Link
+                              to={`/apartments/${item._id}`}
+                              className={subtleButtonClass}
+                            >
+                              View
+                            </Link>
+                            <button
+                              type="button"
+                              onClick={() => startEditingApartment(item)}
+                              className={primaryButtonClass}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setApartmentStatus(item._id, 'AVAILABLE')}
+                              disabled={item.status === 'AVAILABLE'}
+                              className={`${subtleButtonClass} disabled:cursor-not-allowed disabled:opacity-50`}
+                            >
+                              Set Available
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setApartmentStatus(item._id, 'HIDDEN')}
+                              disabled={item.status === 'HIDDEN'}
+                              className={`${subtleButtonClass} disabled:cursor-not-allowed disabled:opacity-50`}
+                            >
+                              Hide
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteApartment(item._id)}
+                              className={dangerButtonClass}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </article>
+                      );
+                    })
                   )}
                 </div>
               </Panel>
@@ -820,14 +1410,33 @@ const Dashboard = () => {
                 <StatCard label="Bookings" value={adminStats.bookings} />
               </div>
 
-              <Panel title="Manage Users" description="Adjust roles and enforce account status for platform safety.">
+              <Panel
+                title="Manage Users"
+                description="Adjust roles and enforce account status for platform safety."
+                action={
+                  <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                    <input
+                      type="text"
+                      value={adminUserSearch}
+                      onChange={(event) => setAdminUserSearch(event.target.value)}
+                      placeholder="Search name, email, role..."
+                      className={`${fieldClassName} sm:min-w-[18rem]`}
+                    />
+                    {adminUserSearch.trim() && (
+                      <button type="button" onClick={() => setAdminUserSearch('')} className={subtleButtonClass}>
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                }
+              >
                 <div className="mt-4 space-y-3">
-                  {users.length === 0 ? (
+                  {filteredUsers.length === 0 ? (
                     <p className="rounded-2xl border border-slate-200 bg-white px-4 py-6 text-center text-sm font-semibold text-slate-600">
-                      No users found.
+                      {adminUserSearch.trim() ? 'No users match your search.' : 'No users found.'}
                     </p>
                   ) : (
-                    users.map((item) => (
+                    filteredUsers.map((item) => (
                       <article
                         key={item._id}
                         className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 md:flex-row md:items-center md:justify-between"
@@ -879,14 +1488,33 @@ const Dashboard = () => {
                 </div>
               </Panel>
 
-              <Panel title="Moderate Listings" description="Control listing visibility and remove policy-violating posts.">
+              <Panel
+                title="Moderate Listings"
+                description="Control listing visibility and remove policy-violating posts."
+                action={
+                  <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                    <input
+                      type="text"
+                      value={adminRoomSearch}
+                      onChange={(event) => setAdminRoomSearch(event.target.value)}
+                      placeholder="Search title, district, agent..."
+                      className={`${fieldClassName} sm:min-w-[18rem]`}
+                    />
+                    {adminRoomSearch.trim() && (
+                      <button type="button" onClick={() => setAdminRoomSearch('')} className={subtleButtonClass}>
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                }
+              >
                 <div className="mt-4 space-y-3">
-                  {apartments.length === 0 ? (
+                  {filteredAdminApartments.length === 0 ? (
                     <p className="rounded-2xl border border-slate-200 bg-white px-4 py-6 text-center text-sm font-semibold text-slate-600">
-                      No listings found.
+                      {adminRoomSearch.trim() ? 'No listings match your search.' : 'No listings found.'}
                     </p>
                   ) : (
-                    apartments.map((item) => (
+                    filteredAdminApartments.map((item) => (
                       <article
                         key={item._id}
                         className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 md:flex-row md:items-center md:justify-between"

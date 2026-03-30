@@ -1,6 +1,127 @@
 import Apartment from '../models/Apartment.js';
+import Booking from '../models/Booking.js';
+import mongoose from 'mongoose';
 
 const ROOM_TYPE_ORDER = ['STUDIO', '1BR', '2BR', '3BR', 'DUPLEX', 'PENTHOUSE'];
+const MAX_APARTMENT_IMAGES = 8;
+
+const isValidObjectId = (value) => typeof value === 'string' && mongoose.Types.ObjectId.isValid(value.trim());
+
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const parseMaybeNumber = (value) => {
+  if (value === '' || value === null || typeof value === 'undefined') {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const parseJsonValue = (value, fallback = {}) => {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' ? parsed : fallback;
+  } catch (error) {
+    return fallback;
+  }
+};
+
+const normalizeImageList = (value) => {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === 'string' ? item.trim() : ''))
+      .filter(Boolean);
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+
+    if (!trimmed) {
+      return [];
+    }
+
+    if (trimmed.startsWith('[')) {
+      const parsed = parseJsonValue(trimmed, []);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((item) => (typeof item === 'string' ? item.trim() : ''))
+          .filter(Boolean);
+      }
+    }
+
+    return trimmed
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+};
+
+const dedupeImageList = (value) => {
+  const list = Array.isArray(value) ? value : [];
+  return [...new Set(list.map((item) => (typeof item === 'string' ? item.trim() : '')).filter(Boolean))];
+};
+
+const getUploadedImageUrls = (req) => {
+  const files = Array.isArray(req.files) ? req.files : [];
+
+  return files.map((file) => `${req.protocol}://${req.get('host')}/uploads/apartments/${file.filename}`);
+};
+
+const parseApartmentPayload = (req) => {
+  const initialPayload = typeof req.body?.payload === 'string'
+    ? parseJsonValue(req.body.payload, {})
+    : { ...(req.body || {}) };
+
+  const payload = { ...initialPayload };
+
+  if (typeof payload.location === 'string') {
+    payload.location = parseJsonValue(payload.location, {});
+  }
+
+  if (typeof payload.details === 'string') {
+    payload.details = parseJsonValue(payload.details, {});
+  }
+
+  if (typeof payload.images !== 'undefined') {
+    payload.images = normalizeImageList(payload.images);
+  }
+
+  const parsedPrice = parseMaybeNumber(payload.price);
+  if (typeof parsedPrice !== 'undefined') {
+    payload.price = parsedPrice;
+  }
+
+  const parsedArea = parseMaybeNumber(payload.area);
+  if (typeof parsedArea !== 'undefined') {
+    payload.area = parsedArea;
+  }
+
+  if (payload.location && typeof payload.location === 'object') {
+    const parsedLatitude = parseMaybeNumber(payload.location.latitude);
+    const parsedLongitude = parseMaybeNumber(payload.location.longitude);
+
+    if (typeof parsedLatitude !== 'undefined') {
+      payload.location.latitude = parsedLatitude;
+    } else {
+      delete payload.location.latitude;
+    }
+
+    if (typeof parsedLongitude !== 'undefined') {
+      payload.location.longitude = parsedLongitude;
+    } else {
+      delete payload.location.longitude;
+    }
+  }
+
+  return payload;
+};
 
 const getApartments = async (req, res) => {
   try {
@@ -16,48 +137,71 @@ const getApartments = async (req, res) => {
       agentId,
       roomType,
       sortBy,
-      sortOrder
+      sortOrder,
+      includeRentalStats,
+      page,
+      limit,
+      excludeHidden
     } = req.query;
 
     const filter = {};
+    const parsedPage = Number.parseInt(page, 10);
+    const parsedLimit = Number.parseInt(limit, 10);
+    const hasPagination = Number.isInteger(parsedPage) && parsedPage > 0 && Number.isInteger(parsedLimit) && parsedLimit > 0;
+    const safeLimit = hasPagination ? Math.min(parsedLimit, 50) : null;
+    const shouldExcludeHidden = String(excludeHidden || '').toLowerCase() === 'true';
 
     if (transactionType) {
       filter.transactionType = transactionType;
     }
 
     if (city) {
-      filter['location.city'] = { $regex: city, $options: 'i' };
+      const sanitizedCity = escapeRegex(String(city).trim());
+      if (sanitizedCity) {
+        filter['location.city'] = { $regex: sanitizedCity, $options: 'i' };
+      }
     }
 
     if (district) {
-      filter['location.district'] = { $regex: district, $options: 'i' };
+      const sanitizedDistrict = escapeRegex(String(district).trim());
+      if (sanitizedDistrict) {
+        filter['location.district'] = { $regex: sanitizedDistrict, $options: 'i' };
+      }
     }
 
     if (agentId) {
-      filter.agentId = agentId;
+      const sanitizedAgentId = String(agentId).trim();
+      if (!isValidObjectId(sanitizedAgentId)) {
+        return res.status(400).json({ success: false, message: 'Invalid agentId filter' });
+      }
+      filter.agentId = sanitizedAgentId;
     }
 
     if (roomType) {
       filter.roomType = roomType;
     }
 
-    if (minPrice || maxPrice) {
+    const parsedMinPrice = parseMaybeNumber(minPrice);
+    const parsedMaxPrice = parseMaybeNumber(maxPrice);
+    if (typeof parsedMinPrice !== 'undefined' || typeof parsedMaxPrice !== 'undefined') {
       filter.price = {};
-      if (minPrice) {
-        filter.price.$gte = Number(minPrice);
+      if (typeof parsedMinPrice !== 'undefined') {
+        filter.price.$gte = parsedMinPrice;
       }
-      if (maxPrice) {
-        filter.price.$lte = Number(maxPrice);
+      if (typeof parsedMaxPrice !== 'undefined') {
+        filter.price.$lte = parsedMaxPrice;
       }
     }
 
-    if (minArea || maxArea) {
+    const parsedMinArea = parseMaybeNumber(minArea);
+    const parsedMaxArea = parseMaybeNumber(maxArea);
+    if (typeof parsedMinArea !== 'undefined' || typeof parsedMaxArea !== 'undefined') {
       filter.area = {};
-      if (minArea) {
-        filter.area.$gte = Number(minArea);
+      if (typeof parsedMinArea !== 'undefined') {
+        filter.area.$gte = parsedMinArea;
       }
-      if (maxArea) {
-        filter.area.$lte = Number(maxArea);
+      if (typeof parsedMaxArea !== 'undefined') {
+        filter.area.$lte = parsedMaxArea;
       }
     }
 
@@ -65,16 +209,27 @@ const getApartments = async (req, res) => {
       filter.status = status;
     }
 
+    if (status === 'ALL' && shouldExcludeHidden) {
+      filter.status = { $ne: 'HIDDEN' };
+    }
+
     if (!status) {
       filter.status = 'AVAILABLE';
     }
 
-    const apartments = await Apartment.find(filter)
-      .populate('agentId', 'fullName phone avatar role status agentInfo')
+    const baseQuery = Apartment.find(filter)
+      .populate('agentId', 'fullName email phone avatar role status agentInfo')
       .sort({ createdAt: -1 });
 
+    let apartments = [];
+    let totalItems = 0;
+    let currentPage = hasPagination ? parsedPage : 1;
+    let totalPages = 1;
+
     if (sortBy === 'roomType') {
-      apartments.sort((a, b) => {
+      const sortedApartments = await baseQuery;
+
+      sortedApartments.sort((a, b) => {
         const aIndex = ROOM_TYPE_ORDER.indexOf(a.roomType);
         const bIndex = ROOM_TYPE_ORDER.indexOf(b.roomType);
         const safeA = aIndex === -1 ? Number.MAX_SAFE_INTEGER : aIndex;
@@ -86,9 +241,86 @@ const getApartments = async (req, res) => {
 
         return sortOrder === 'desc' ? safeB - safeA : safeA - safeB;
       });
+
+      if (hasPagination) {
+        totalItems = sortedApartments.length;
+        totalPages = Math.max(1, Math.ceil(totalItems / safeLimit));
+        currentPage = Math.min(currentPage, totalPages);
+        const sliceStart = (currentPage - 1) * safeLimit;
+        apartments = sortedApartments.slice(sliceStart, sliceStart + safeLimit);
+      } else {
+        apartments = sortedApartments;
+      }
+    } else if (hasPagination) {
+      totalItems = await Apartment.countDocuments(filter);
+      totalPages = Math.max(1, Math.ceil(totalItems / safeLimit));
+      currentPage = Math.min(currentPage, totalPages);
+
+      apartments = await Apartment.find(filter)
+        .populate('agentId', 'fullName email phone avatar role status agentInfo')
+        .sort({ createdAt: -1 })
+        .skip((currentPage - 1) * safeLimit)
+        .limit(safeLimit);
+    } else {
+      apartments = await baseQuery;
     }
 
-    return res.status(200).json({ success: true, data: apartments });
+    const shouldIncludeRentalStats = String(includeRentalStats || '').toLowerCase() === 'true';
+
+    const responsePayload = {
+      success: true,
+      data: apartments
+    };
+
+    if (hasPagination) {
+      responsePayload.pagination = {
+        page: currentPage,
+        limit: safeLimit,
+        totalItems,
+        totalPages,
+        hasPrevPage: currentPage > 1,
+        hasNextPage: currentPage < totalPages
+      };
+    }
+
+    if (!shouldIncludeRentalStats) {
+      return res.status(200).json(responsePayload);
+    }
+
+    const apartmentIds = apartments.map((item) => item._id);
+    const rentalCountMap = new Map();
+
+    if (apartmentIds.length) {
+      const rentalStats = await Booking.aggregate([
+        {
+          $match: {
+            apartmentId: { $in: apartmentIds },
+            status: 'COMPLETED'
+          }
+        },
+        {
+          $group: {
+            _id: '$apartmentId',
+            rentalCount: { $sum: 1 }
+          }
+        }
+      ]);
+
+      rentalStats.forEach((item) => {
+        rentalCountMap.set(String(item._id), item.rentalCount);
+      });
+    }
+
+    const apartmentsWithRentalStats = apartments.map((apartment) => {
+      const data = apartment.toObject();
+      data.rentalCount = data.transactionType === 'RENT' ? rentalCountMap.get(String(data._id)) || 0 : 0;
+      return data;
+    });
+
+    return res.status(200).json({
+      ...responsePayload,
+      data: apartmentsWithRentalStats
+    });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -96,9 +328,13 @@ const getApartments = async (req, res) => {
 
 const getApartmentById = async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid apartment id' });
+    }
+
     const apartment = await Apartment.findById(req.params.id).populate(
       'agentId',
-      'fullName phone avatar role status agentInfo'
+      'fullName email phone avatar role status agentInfo'
     );
 
     if (!apartment) {
@@ -113,7 +349,25 @@ const getApartmentById = async (req, res) => {
 
 const createApartment = async (req, res) => {
   try {
-    const payload = { ...req.body, agentId: req.user.id };
+    const payload = parseApartmentPayload(req);
+    const uploadedImageUrls = getUploadedImageUrls(req);
+
+    if (uploadedImageUrls.length > 0) {
+      payload.images = uploadedImageUrls;
+    }
+
+    if (typeof payload.images !== 'undefined') {
+      payload.images = dedupeImageList(payload.images);
+      if (payload.images.length > MAX_APARTMENT_IMAGES) {
+        return res.status(400).json({
+          success: false,
+          message: `You can upload up to ${MAX_APARTMENT_IMAGES} images for each apartment.`
+        });
+      }
+    }
+
+    payload.agentId = req.user.id;
+
     const apartment = await Apartment.create(payload);
     return res.status(201).json({ success: true, message: 'Apartment created', data: apartment });
   } catch (error) {
@@ -123,6 +377,10 @@ const createApartment = async (req, res) => {
 
 const updateApartment = async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid apartment id' });
+    }
+
     const apartment = await Apartment.findById(req.params.id);
 
     if (!apartment) {
@@ -133,7 +391,28 @@ const updateApartment = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Forbidden' });
     }
 
-    Object.assign(apartment, req.body);
+    const payload = parseApartmentPayload(req);
+    const uploadedImageUrls = getUploadedImageUrls(req);
+
+    if (Array.isArray(payload.images)) {
+      payload.images = dedupeImageList(payload.images);
+    }
+
+    if (uploadedImageUrls.length > 0) {
+      const baseImages = Array.isArray(payload.images) ? payload.images : apartment.images;
+      payload.images = dedupeImageList([...uploadedImageUrls, ...(Array.isArray(baseImages) ? baseImages : [])]);
+    }
+
+    if (Array.isArray(payload.images) && payload.images.length > MAX_APARTMENT_IMAGES) {
+      return res.status(400).json({
+        success: false,
+        message: `You can upload up to ${MAX_APARTMENT_IMAGES} images for each apartment.`
+      });
+    }
+
+    delete payload.agentId;
+
+    Object.assign(apartment, payload);
     const updatedApartment = await apartment.save();
 
     return res.status(200).json({ success: true, message: 'Apartment updated', data: updatedApartment });
@@ -144,6 +423,10 @@ const updateApartment = async (req, res) => {
 
 const updateApartmentStatus = async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid apartment id' });
+    }
+
     const { status } = req.body;
     const apartment = await Apartment.findById(req.params.id);
 
@@ -166,6 +449,10 @@ const updateApartmentStatus = async (req, res) => {
 
 const deleteApartment = async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid apartment id' });
+    }
+
     const apartment = await Apartment.findById(req.params.id);
 
     if (!apartment) {

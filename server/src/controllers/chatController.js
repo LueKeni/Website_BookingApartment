@@ -60,14 +60,31 @@ const getConversations = async (req, res) => {
 
     const list = await Promise.all(
       conversations.map(async (conversation) => {
-        const unreadCount = await Message.countDocuments({
-          conversationId: conversation._id,
-          senderId: { $ne: req.user.id },
-          isRead: false
-        });
+        const [unreadCount, latestMessage] = await Promise.all([
+          Message.countDocuments({
+            conversationId: conversation._id,
+            senderId: { $ne: req.user.id },
+            isRead: false
+          }),
+          Message.findOne({ conversationId: conversation._id })
+            .populate('senderId', 'fullName avatar')
+            .sort({ createdAt: -1 })
+        ]);
+
+        const senderInfo = latestMessage?.senderId;
+        const lastMessageMeta = latestMessage
+          ? {
+              senderId: senderInfo?._id || senderInfo,
+              senderName: senderInfo?.fullName || 'Unknown',
+              senderAvatar: senderInfo?.avatar || '',
+              createdAt: latestMessage.createdAt
+            }
+          : null;
 
         return {
           ...conversation.toObject(),
+          lastMessage: latestMessage?.text || conversation.lastMessage || '',
+          lastMessageMeta,
           unreadCount
         };
       })

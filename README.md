@@ -45,10 +45,25 @@ ApartmentBookingProject/
 PORT=5000
 MONGO_URI=mongodb://127.0.0.1:27017/apartment_booking
 JWT_SECRET=change_this_secret
+GOOGLE_CLIENT_ID=your_google_web_client_id
 
 ### client/.env
 
 VITE_API_BASE_URL=http://localhost:5000/api
+VITE_GOOGLE_CLIENT_ID=your_google_web_client_id
+
+### Google OAuth Setup (Required For Google Login)
+
+If you see a browser error like `The given origin is not allowed for the given client ID`, configure your OAuth client in Google Cloud Console:
+
+1. Go to Google Cloud Console > APIs & Services > Credentials.
+2. Open your OAuth 2.0 Client ID (type: Web application).
+3. In Authorized JavaScript origins, add your frontend origins, for example:
+  - http://localhost:5173
+  - http://127.0.0.1:5173
+4. Save and wait a few minutes for changes to propagate.
+5. Make sure `GOOGLE_CLIENT_ID` (server) and `VITE_GOOGLE_CLIENT_ID` (client) are the same Web client ID.
+6. Restart backend and frontend dev servers after env/config changes.
 
 ## Install
 

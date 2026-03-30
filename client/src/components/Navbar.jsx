@@ -40,12 +40,16 @@ const Navbar = () => {
               <NavLink to="/dashboard" className={navLinkClass}>
                 Dashboard
               </NavLink>
-              <NavLink to="/inbox" className={navLinkClass}>
-                Inbox
-              </NavLink>
-              <NavLink to="/profile" className={navLinkClass}>
-                Profile
-              </NavLink>
+              {user?.role !== 'ADMIN' && (
+                <>
+                  <NavLink to="/inbox" className={navLinkClass}>
+                    Inbox
+                  </NavLink>
+                  <NavLink to="/profile" className={navLinkClass}>
+                    Profile
+                  </NavLink>
+                </>
+              )}
             </>
           )}
 

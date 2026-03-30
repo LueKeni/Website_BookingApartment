@@ -19,6 +19,11 @@ const initSocket = (io) => {
   });
 
   io.on('connection', (socket) => {
+    if (socket.user?.role === 'ADMIN') {
+      socket.disconnect(true);
+      return;
+    }
+
     socket.on('join_conversation', async ({ conversationId }) => {
       try {
         if (!conversationId) {

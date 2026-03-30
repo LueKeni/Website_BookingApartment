@@ -1,4 +1,7 @@
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+
+const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1494526585095-c41746248156?auto=format&fit=crop&w=1200&q=80';
 
 const formatPrice = (value) => {
   const amount = typeof value === 'number' ? value : Number(value);
@@ -19,16 +22,46 @@ const toLabel = (value) => {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 };
 
+const getInitial = (value) => {
+  if (typeof value !== 'string' || !value.trim()) {
+    return 'A';
+  }
+
+  return value.trim().charAt(0).toUpperCase();
+};
+
 const ApartmentCard = ({ apartment, index = 0 }) => {
-  const image = apartment?.images?.[0] || 'https://images.unsplash.com/photo-1494526585095-c41746248156?auto=format&fit=crop&w=1200&q=80';
+  const imageCandidates = useMemo(() => {
+    const images = Array.isArray(apartment?.images) ? apartment.images : [];
+    const validImages = images.filter((item) => typeof item === 'string' && item.trim() !== '');
+    return validImages.length ? validImages : [FALLBACK_IMAGE];
+  }, [apartment?.images]);
+
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
+
+  useEffect(() => {
+    setActiveImageIndex(0);
+  }, [apartment?._id, apartment?.images]);
+
+  const image = imageCandidates[activeImageIndex] || FALLBACK_IMAGE;
+
+  const handleImageError = () => {
+    if (image === FALLBACK_IMAGE) {
+      return;
+    }
+
+    setActiveImageIndex((current) => {
+      const nextIndex = current + 1;
+      return nextIndex < imageCandidates.length ? nextIndex : imageCandidates.length;
+    });
+  };
+
   const location = apartment?.location
     ? `${apartment.location.address}, ${apartment.location.district}, ${apartment.location.city}`
     : 'Unknown location';
 
   const price = typeof apartment?.price === 'number' ? apartment.price : Number(apartment?.price);
   const area = typeof apartment?.area === 'number' ? apartment.area : Number(apartment?.area);
-  const bedrooms = typeof apartment?.details?.bedrooms === 'number' ? apartment.details.bedrooms : null;
-  const bathrooms = typeof apartment?.details?.bathrooms === 'number' ? apartment.details.bathrooms : null;
   const isSale = apartment?.transactionType === 'SALE';
 
   const latitude = apartment?.location?.latitude;
@@ -45,6 +78,10 @@ const ApartmentCard = ({ apartment, index = 0 }) => {
   const statusClass = statusClassByType[apartment?.status] || 'bg-slate-200 text-slate-700';
   const priceCaption = isSale ? 'Total price' : 'Monthly rent';
   const areaLabel = Number.isFinite(area) ? `${area} m²` : '-';
+  const agentName = apartment?.agentId?.fullName || 'Unknown agent';
+  const agentAvatar = typeof apartment?.agentId?.avatar === 'string' ? apartment.agentId.avatar.trim() : '';
+  const agentLocation = apartment?.agentId?.agentInfo?.location || '';
+  const agentInitial = getInitial(agentName);
 
   return (
     <article
@@ -56,6 +93,7 @@ const ApartmentCard = ({ apartment, index = 0 }) => {
           src={image}
           alt={apartment?.title || 'Apartment'}
           className="h-56 w-full object-cover transition duration-500 group-hover:scale-105"
+          onError={handleImageError}
         />
         <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/65 via-black/35 to-transparent" />
         <div className="absolute left-3 top-3 flex items-center gap-2">
@@ -86,22 +124,27 @@ const ApartmentCard = ({ apartment, index = 0 }) => {
 
       <div className="space-y-3.5 p-4 sm:p-5">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{toLabel(apartment?.roomType)}</p>
-        <h3 className="display-font text-[1.6rem] leading-tight text-[#0f2d3f]">{apartment?.title || 'Apartment Listing'}</h3>
+        <div className="flex items-start justify-between gap-3">
+          <h3 className="display-font text-[1.6rem] leading-tight text-[#0f2d3f]">{apartment?.title || 'Apartment Listing'}</h3>
+          <div className="shrink-0 rounded-xl border border-[#e6edf1] bg-[#f6fafc] px-3 py-1.5 text-center">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">Area</p>
+            <p className="text-sm font-semibold text-[#173f56]">{areaLabel}</p>
+          </div>
+        </div>
         <p className="line-clamp-2 text-sm leading-relaxed text-slate-600">{location}</p>
 
-        <div className="grid grid-cols-3 gap-2.5 text-xs font-semibold text-slate-600">
-          <div className="rounded-xl border border-[#e6edf1] bg-[#f6fafc] px-2 py-2 text-center">
-            <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Area</p>
-            <p className="text-sm text-[#173f56]">{areaLabel}</p>
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-[#e6edf1] bg-[#f6fafc] px-3 py-2">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[#dce7ec] bg-white text-sm font-bold text-[#173f56]">
+              {agentAvatar ? <img src={agentAvatar} alt={agentName} className="h-full w-full object-cover" /> : agentInitial}
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">Listed by</p>
+              <p className="truncate text-sm font-semibold text-[#173f56]">{agentName}</p>
+            </div>
           </div>
-          <div className="rounded-xl border border-[#e6edf1] bg-[#f6fafc] px-2 py-2 text-center">
-            <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Beds</p>
-            <p className="text-sm text-[#173f56]">{bedrooms ?? '-'}</p>
-          </div>
-          <div className="rounded-xl border border-[#e6edf1] bg-[#f6fafc] px-2 py-2 text-center">
-            <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Baths</p>
-            <p className="text-sm text-[#173f56]">{bathrooms ?? '-'}</p>
-          </div>
+
+          {agentLocation && <p className="max-w-[45%] truncate text-[11px] font-semibold text-slate-500">{agentLocation}</p>}
         </div>
 
         <div className="flex items-end justify-between border-t border-[#edf1f4] pt-2">

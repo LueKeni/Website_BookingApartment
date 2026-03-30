@@ -4,6 +4,8 @@ import bcrypt from 'bcryptjs';
 const agentInfoSchema = new mongoose.Schema(
 	{
 		location: { type: String, trim: true },
+		bio: { type: String, trim: true, maxlength: 600 },
+		specialties: [{ type: String, trim: true }],
 		responseRate: { type: Number, default: 0, min: 0, max: 100 },
 		successDeals: { type: Number, default: 0, min: 0 },
 		availableDays: [{ type: String, trim: true }]

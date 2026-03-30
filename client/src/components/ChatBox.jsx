@@ -4,7 +4,7 @@ import api from '../services/api.js';
 import { getSocket } from '../services/socket.js';
 import ChatWindow from './ChatWindow.jsx';
 
-const ChatBox = ({ apartmentId, agentId, agentName }) => {
+const ChatBox = ({ apartmentId, agentId, agentName, embedded = false }) => {
   const { user, isAuthenticated } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [conversation, setConversation] = useState(null);
@@ -97,10 +97,22 @@ const ChatBox = ({ apartmentId, agentId, agentName }) => {
     return null;
   }
 
+  const containerClassName = embedded
+    ? 'w-full'
+    : 'fixed bottom-4 right-4 z-50 w-[360px] max-w-[calc(100vw-2rem)]';
+
+  const panelClassName = embedded
+    ? 'rounded-2xl border border-[#d5e1e8] bg-white p-3 shadow-[0_18px_35px_-28px_rgba(15,45,63,0.95)]'
+    : 'rounded-2xl border border-slate-200 bg-white p-3 shadow-2xl';
+
+  const triggerClassName = embedded
+    ? 'w-full rounded-xl bg-gradient-to-r from-[#0f2d3f] to-[#173f56] px-4 py-2.5 text-sm font-black text-white transition hover:brightness-110'
+    : 'w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-black text-white shadow-xl';
+
   return (
-    <div className="fixed bottom-4 right-4 z-50 w-[360px] max-w-[calc(100vw-2rem)]">
+    <div className={containerClassName}>
       {isOpen ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-2xl">
+        <div className={panelClassName}>
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-sm font-black text-slate-900">Chat with {agentName || 'Agent'}</h3>
             <button
@@ -136,7 +148,7 @@ const ChatBox = ({ apartmentId, agentId, agentName }) => {
         <button
           type="button"
           onClick={openChat}
-          className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-black text-white shadow-xl"
+          className={triggerClassName}
         >
           Chat with Agent
         </button>
