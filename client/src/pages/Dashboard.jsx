@@ -156,17 +156,23 @@ const StatCard = ({ label, value }) => {
   );
 };
 
-const Panel = ({ title, description, action, children }) => {
+const Panel = ({ title, description, action, children, compact = false }) => {
+  const panelClassName = compact
+    ? 'rounded-[1.3rem] border border-white/80 bg-white/95 p-4 shadow-[0_20px_45px_-30px_rgba(15,45,63,0.65)] md:p-5'
+    : 'rounded-[1.6rem] border border-white/80 bg-white/90 p-5 shadow-[0_20px_45px_-30px_rgba(15,45,63,0.65)] md:p-6';
+
+  const titleClassName = compact ? 'display-font text-2xl text-[#0f2d3f]' : 'display-font text-3xl text-[#0f2d3f]';
+
   return (
-    <section className="rounded-[1.6rem] border border-white/80 bg-white/90 p-5 shadow-[0_20px_45px_-30px_rgba(15,45,63,0.65)] md:p-6">
+    <section className={panelClassName}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="display-font text-3xl text-[#0f2d3f]">{title}</h2>
+          <h2 className={titleClassName}>{title}</h2>
           {description && <p className="mt-1 text-sm text-slate-600">{description}</p>}
         </div>
         {action}
       </div>
-      <div className="mt-4">{children}</div>
+      <div className={compact ? 'mt-3' : 'mt-4'}>{children}</div>
     </section>
   );
 };
@@ -203,9 +209,10 @@ const MapViewUpdater = ({ position }) => {
   return null;
 };
 
-const MapPinPicker = ({ latitude, longitude, onPinSelect, onClearPin }) => {
+const MapPinPicker = ({ latitude, longitude, onPinSelect, onClearPin, compact = false }) => {
   const hasPin = Number.isFinite(latitude) && Number.isFinite(longitude);
   const selectedPosition = hasPin ? [latitude, longitude] : null;
+  const allowScrollWheelZoom = !compact;
 
   return (
     <div className="space-y-2 md:col-span-2">
@@ -214,8 +221,8 @@ const MapPinPicker = ({ latitude, longitude, onPinSelect, onClearPin }) => {
         <MapContainer
           center={selectedPosition || DEFAULT_MAP_CENTER}
           zoom={selectedPosition ? 16 : 12}
-          scrollWheelZoom
-          className="h-72 w-full"
+          scrollWheelZoom={allowScrollWheelZoom}
+          className={`${compact ? 'h-52' : 'h-72'} w-full`}
         >
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -226,7 +233,11 @@ const MapPinPicker = ({ latitude, longitude, onPinSelect, onClearPin }) => {
           {selectedPosition && <CircleMarker center={selectedPosition} radius={10} pathOptions={{ color: '#ef4444', fillOpacity: 0.65 }} />}
         </MapContainer>
       </div>
-      <p className="text-xs text-slate-500">Click directly on the map to pin the apartment location.</p>
+      <p className="text-xs text-slate-500">
+        {allowScrollWheelZoom
+          ? 'Click directly on the map to pin the apartment location.'
+          : 'Click directly on the map to pin location. Mouse wheel will scroll the form.'}
+      </p>
       {hasPin ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-100 px-3 py-2 text-xs text-slate-700">
           <span>Lat: {latitude} | Lng: {longitude}</span>
@@ -257,6 +268,7 @@ const Dashboard = () => {
   const [imageFiles, setImageFiles] = useState([]);
   const [imageInputKey, setImageInputKey] = useState(0);
   const [editingApartmentId, setEditingApartmentId] = useState('');
+  const [isListingEditorOpen, setIsListingEditorOpen] = useState(false);
   const [retainedEditingImages, setRetainedEditingImages] = useState([]);
   const [savingApartment, setSavingApartment] = useState(false);
   const [reviewMap, setReviewMap] = useState({});
@@ -360,6 +372,26 @@ const Dashboard = () => {
     };
   }, [success]);
 
+  useEffect(() => {
+    if (!isListingEditorOpen) {
+      return undefined;
+    }
+
+    const originalOverflow = document.body.style.overflow;
+    const originalPaddingRight = document.body.style.paddingRight;
+    const scrollBarWidth = window.innerWidth - document.documentElement.clientWidth;
+
+    document.body.style.overflow = 'hidden';
+    if (scrollBarWidth > 0) {
+      document.body.style.paddingRight = `${scrollBarWidth}px`;
+    }
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.body.style.paddingRight = originalPaddingRight;
+    };
+  }, [isListingEditorOpen]);
+
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
@@ -414,6 +446,18 @@ const Dashboard = () => {
     setRetainedEditingImages([]);
   };
 
+  const openCreateListingEditor = () => {
+    resetApartmentEditor();
+    setError('');
+    setIsListingEditorOpen(true);
+  };
+
+  const closeListingEditor = () => {
+    resetApartmentEditor();
+    setError('');
+    setIsListingEditorOpen(false);
+  };
+
   const startEditingApartment = (apartment) => {
     if (!apartment) {
       return;
@@ -437,6 +481,7 @@ const Dashboard = () => {
     setImageInputKey((current) => current + 1);
     setRetainedEditingImages(getImageUrls(apartment.images));
     setError('');
+    setIsListingEditorOpen(true);
   };
 
   const saveApartment = async (event) => {
@@ -533,6 +578,7 @@ const Dashboard = () => {
       }
 
       resetApartmentEditor();
+      setIsListingEditorOpen(false);
       await loadDashboardData();
       showSuccess(
         didUpdate
@@ -960,22 +1006,34 @@ const Dashboard = () => {
                 <StatCard label="Response Rate" value={`${agentStats.responseRate}%`} />
               </div>
 
-              <Panel
-                title={editingApartmentId ? 'Edit Listing' : 'Create Listing'}
-                description={
-                  editingApartmentId
-                    ? 'Update apartment information. Add more images to extend the gallery (up to 8 images total).'
-                    : 'Publish a new apartment listing with precise map location.'
-                }
-                action={
-                  editingApartmentId ? (
-                    <button type="button" onClick={resetApartmentEditor} className={subtleButtonClass}>
-                      Cancel Editing
-                    </button>
-                  ) : null
-                }
-              >
-                <form id="listing-editor" onSubmit={saveApartment} className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              {isListingEditorOpen && (
+                <div
+                  className="fixed inset-0 z-50 flex items-center justify-center bg-[#0f2d3f]/45 p-2 backdrop-blur-[2px] sm:p-3"
+                  onClick={(event) => {
+                    if (event.target === event.currentTarget) {
+                      closeListingEditor();
+                    }
+                  }}
+                >
+                  <div
+                    className="max-h-[88vh] w-full max-w-4xl overflow-y-scroll overscroll-contain [scrollbar-gutter:stable]"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <Panel
+                      compact
+                      title={editingApartmentId ? 'Edit Listing' : 'Create Listing'}
+                      description={
+                        editingApartmentId
+                          ? 'Update apartment information. Add more images to extend the gallery (up to 8 images total).'
+                          : 'Publish a new apartment listing with precise map location.'
+                      }
+                      action={
+                        <button type="button" onClick={closeListingEditor} className={subtleButtonClass}>
+                          Close
+                        </button>
+                      }
+                    >
+                <form id="listing-editor" onSubmit={saveApartment} className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
                   <label className="space-y-1">
                     <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Listing title</span>
                     <input
@@ -1079,6 +1137,7 @@ const Dashboard = () => {
                   <MapPinPicker
                     latitude={apartmentForm.latitude}
                     longitude={apartmentForm.longitude}
+                    compact
                     onPinSelect={({ latitude, longitude }) =>
                       setApartmentForm((prev) => ({ ...prev, latitude, longitude }))
                     }
@@ -1207,13 +1266,24 @@ const Dashboard = () => {
                     </button>
                   </div>
                 </form>
-              </Panel>
+                    </Panel>
+                  </div>
+                </div>
+              )}
 
               <Panel
                 title="Manage Listings"
                 description="Control visibility and remove outdated properties."
                 action={
                   <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center">
+                    <button
+                      type="button"
+                      onClick={openCreateListingEditor}
+                      className={`${primaryButtonClass} md:whitespace-nowrap`}
+                    >
+                      Add Listing
+                    </button>
+
                     <input
                       type="text"
                       value={agentListingSearch}
