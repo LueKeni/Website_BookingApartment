@@ -420,6 +420,207 @@ const listPointPackages = async (req, res) => {
   });
 };
 
+const getAdminRevenueSummary = async (req, res) => {
+  try {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const statusRows = await PaymentTransaction.aggregate([
+      { $match: { provider: 'MOMO' } },
+      {
+        $group: {
+          _id: '$status',
+          transactions: { $sum: 1 },
+          revenueVnd: {
+            $sum: {
+              $cond: [{ $eq: ['$status', 'PAID'] }, '$amount', 0]
+            }
+          },
+          pointsSold: {
+            $sum: {
+              $cond: [{ $eq: ['$status', 'PAID'] }, '$points', 0]
+            }
+          }
+        }
+      }
+    ]);
+
+    const statusSummary = statusRows.reduce(
+      (accumulator, row) => {
+        if (row?._id === 'PAID') {
+          accumulator.paidTransactions = row.transactions || 0;
+          accumulator.totalRevenueVnd = row.revenueVnd || 0;
+          accumulator.totalPointsSold = row.pointsSold || 0;
+        }
+
+        if (row?._id === 'PENDING') {
+          accumulator.pendingTransactions = row.transactions || 0;
+        }
+
+        if (row?._id === 'FAILED') {
+          accumulator.failedTransactions = row.transactions || 0;
+        }
+
+        return accumulator;
+      },
+      {
+        paidTransactions: 0,
+        pendingTransactions: 0,
+        failedTransactions: 0,
+        totalRevenueVnd: 0,
+        totalPointsSold: 0
+      }
+    );
+
+    const [todayRevenueRow, monthRevenueRow, packageRows, dailyRows, recentTransactions] = await Promise.all([
+      PaymentTransaction.aggregate([
+        {
+          $match: {
+            provider: 'MOMO',
+            status: 'PAID',
+            completedAt: { $gte: startOfToday }
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            revenueVnd: { $sum: '$amount' },
+            pointsSold: { $sum: '$points' },
+            transactions: { $sum: 1 }
+          }
+        }
+      ]),
+      PaymentTransaction.aggregate([
+        {
+          $match: {
+            provider: 'MOMO',
+            status: 'PAID',
+            completedAt: { $gte: startOfMonth }
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            revenueVnd: { $sum: '$amount' },
+            pointsSold: { $sum: '$points' },
+            transactions: { $sum: 1 }
+          }
+        }
+      ]),
+      PaymentTransaction.aggregate([
+        { $match: { provider: 'MOMO', status: 'PAID' } },
+        {
+          $group: {
+            _id: '$packageId',
+            revenueVnd: { $sum: '$amount' },
+            pointsSold: { $sum: '$points' },
+            transactions: { $sum: 1 }
+          }
+        },
+        { $sort: { revenueVnd: -1, transactions: -1 } },
+        { $limit: 5 }
+      ]),
+      PaymentTransaction.aggregate([
+        {
+          $match: {
+            provider: 'MOMO',
+            status: 'PAID',
+            completedAt: { $gte: new Date(startOfToday.getTime() - 6 * 24 * 60 * 60 * 1000) }
+          }
+        },
+        {
+          $group: {
+            _id: {
+              year: { $year: '$completedAt' },
+              month: { $month: '$completedAt' },
+              day: { $dayOfMonth: '$completedAt' }
+            },
+            revenueVnd: { $sum: '$amount' },
+            transactions: { $sum: 1 }
+          }
+        },
+        { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } }
+      ]),
+      PaymentTransaction.find({ provider: 'MOMO' })
+        .populate('userId', 'fullName email')
+        .select('orderId packageId amount points status resultCode message createdAt completedAt')
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .lean()
+    ]);
+
+    const dayLabels = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(startOfToday.getTime() - (6 - index) * 24 * 60 * 60 * 1000);
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      return {
+        key,
+        label: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      };
+    });
+
+    const dailyMap = new Map(
+      dailyRows.map((row) => {
+        const key = `${row._id.year}-${String(row._id.month).padStart(2, '0')}-${String(row._id.day).padStart(2, '0')}`;
+        return [key, row];
+      })
+    );
+
+    const revenueLast7Days = dayLabels.map((day) => {
+      const matched = dailyMap.get(day.key);
+      return {
+        dateKey: day.key,
+        label: day.label,
+        revenueVnd: matched?.revenueVnd || 0,
+        transactions: matched?.transactions || 0
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        overview: {
+          totalRevenueVnd: statusSummary.totalRevenueVnd,
+          totalPointsSold: statusSummary.totalPointsSold,
+          paidTransactions: statusSummary.paidTransactions,
+          pendingTransactions: statusSummary.pendingTransactions,
+          failedTransactions: statusSummary.failedTransactions,
+          todayRevenueVnd: todayRevenueRow?.[0]?.revenueVnd || 0,
+          todayPointsSold: todayRevenueRow?.[0]?.pointsSold || 0,
+          todayTransactions: todayRevenueRow?.[0]?.transactions || 0,
+          monthRevenueVnd: monthRevenueRow?.[0]?.revenueVnd || 0,
+          monthPointsSold: monthRevenueRow?.[0]?.pointsSold || 0,
+          monthTransactions: monthRevenueRow?.[0]?.transactions || 0
+        },
+        topPackages: packageRows.map((row) => ({
+          packageId: row._id,
+          revenueVnd: row.revenueVnd || 0,
+          pointsSold: row.pointsSold || 0,
+          transactions: row.transactions || 0
+        })),
+        revenueLast7Days,
+        recentTransactions: recentTransactions.map((transaction) => ({
+          orderId: transaction.orderId,
+          packageId: transaction.packageId,
+          amount: transaction.amount,
+          points: transaction.points,
+          status: transaction.status,
+          resultCode: transaction.resultCode,
+          message: transaction.message,
+          createdAt: transaction.createdAt,
+          completedAt: transaction.completedAt,
+          user: {
+            fullName: transaction.userId?.fullName || '-',
+            email: transaction.userId?.email || '-'
+          }
+        }))
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 const createMomoPayment = async (req, res) => {
   try {
     const { packageId } = req.body;
@@ -669,6 +870,7 @@ const getMomoPaymentStatus = async (req, res) => {
 
 export {
   createMomoPayment,
+  getAdminRevenueSummary,
   getMomoPaymentStatus,
   handleMomoIpn,
   listPointPackages

@@ -85,6 +85,23 @@ const formatVnd = (value) => {
   return `${Math.round(number).toLocaleString('vi-VN')} VND`;
 };
 
+const formatShortVnd = (value) => {
+  const number = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(number) || number <= 0) {
+    return '0 VND';
+  }
+
+  if (number >= 1_000_000_000) {
+    return `${(number / 1_000_000_000).toFixed(1)}B VND`;
+  }
+
+  if (number >= 1_000_000) {
+    return `${(number / 1_000_000).toFixed(1)}M VND`;
+  }
+
+  return `${Math.round(number).toLocaleString('vi-VN')} VND`;
+};
+
 const formatDateTime = (dateValue, timeValue) => {
   if (!dateValue) {
     return '-';
@@ -331,6 +348,20 @@ const Dashboard = () => {
   const [boostingApartmentId, setBoostingApartmentId] = useState('');
   const [adminUserSearch, setAdminUserSearch] = useState('');
   const [adminRoomSearch, setAdminRoomSearch] = useState('');
+  const [adminRevenue, setAdminRevenue] = useState({
+    overview: {
+      totalRevenueVnd: 0,
+      totalPointsSold: 0,
+      paidTransactions: 0,
+      pendingTransactions: 0,
+      failedTransactions: 0,
+      todayRevenueVnd: 0,
+      monthRevenueVnd: 0
+    },
+    topPackages: [],
+    revenueLast7Days: [],
+    recentTransactions: []
+  });
 
   const role = user?.role;
   const userId = getUserId(user);
@@ -385,14 +416,31 @@ const Dashboard = () => {
       }
 
       if (role === 'ADMIN') {
-        const [userResponse, apartmentResponse, bookingResponse] = await Promise.all([
+        const [userResponse, apartmentResponse, bookingResponse, revenueResponse] = await Promise.all([
           api.get('/users'),
           api.get('/apartments', { params: { status: 'ALL' } }),
-          api.get('/bookings/me')
+          api.get('/bookings/me'),
+          api.get('/payments/admin/revenue')
         ]);
         setUsers(userResponse?.data?.data || []);
         setApartments(apartmentResponse?.data?.data || []);
         setBookings(bookingResponse?.data?.data || []);
+        setAdminRevenue(
+          revenueResponse?.data?.data || {
+            overview: {
+              totalRevenueVnd: 0,
+              totalPointsSold: 0,
+              paidTransactions: 0,
+              pendingTransactions: 0,
+              failedTransactions: 0,
+              todayRevenueVnd: 0,
+              monthRevenueVnd: 0
+            },
+            topPackages: [],
+            revenueLast7Days: [],
+            recentTransactions: []
+          }
+        );
       }
     } catch (err) {
       setSuccess('');
@@ -881,6 +929,23 @@ const Dashboard = () => {
       bookings: bookings.length
     };
   }, [users, apartments, bookings]);
+
+  const adminRevenueChart = useMemo(() => {
+    const rows = Array.isArray(adminRevenue?.revenueLast7Days) ? adminRevenue.revenueLast7Days : [];
+    const maxRevenue = rows.reduce((max, row) => Math.max(max, Number(row?.revenueVnd || 0)), 0);
+
+    return rows.map((row) => {
+      const revenue = Number(row?.revenueVnd || 0);
+      const heightPercent = maxRevenue > 0 ? Math.max((revenue / maxRevenue) * 100, revenue > 0 ? 8 : 0) : 0;
+
+      return {
+        label: row?.label || '-',
+        revenueVnd: revenue,
+        transactions: Number(row?.transactions || 0),
+        heightPercent
+      };
+    });
+  }, [adminRevenue?.revenueLast7Days]);
 
   const filteredUsers = useMemo(() => {
     const keyword = adminUserSearch.trim().toLowerCase();
@@ -1687,6 +1752,137 @@ const Dashboard = () => {
                 <StatCard label="Listings" value={adminStats.listings} />
                 <StatCard label="Bookings" value={adminStats.bookings} />
               </div>
+
+              <Panel
+                title="Revenue Overview"
+                description="Platform revenue from point package payments processed via MoMo."
+              >
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                  <StatCard
+                    label="Total Revenue"
+                    value={formatShortVnd(adminRevenue?.overview?.totalRevenueVnd)}
+                  />
+                  <StatCard
+                    label="This Month"
+                    value={formatShortVnd(adminRevenue?.overview?.monthRevenueVnd)}
+                  />
+                  <StatCard
+                    label="Today"
+                    value={formatShortVnd(adminRevenue?.overview?.todayRevenueVnd)}
+                  />
+                  <StatCard
+                    label="Points Sold"
+                    value={Number(adminRevenue?.overview?.totalPointsSold || 0).toLocaleString('en-US')}
+                  />
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+                  <StatCard
+                    label="Paid Transactions"
+                    value={Number(adminRevenue?.overview?.paidTransactions || 0).toLocaleString('en-US')}
+                  />
+                  <StatCard
+                    label="Pending"
+                    value={Number(adminRevenue?.overview?.pendingTransactions || 0).toLocaleString('en-US')}
+                  />
+                  <StatCard
+                    label="Failed"
+                    value={Number(adminRevenue?.overview?.failedTransactions || 0).toLocaleString('en-US')}
+                  />
+                  <StatCard
+                    label="Conversion"
+                    value={(
+                      Number(adminRevenue?.overview?.paidTransactions || 0) /
+                      Math.max(
+                        Number(adminRevenue?.overview?.paidTransactions || 0) +
+                          Number(adminRevenue?.overview?.pendingTransactions || 0) +
+                          Number(adminRevenue?.overview?.failedTransactions || 0),
+                        1
+                      )
+                    ).toLocaleString('en-US', { style: 'percent', maximumFractionDigits: 0 })}
+                  />
+                </div>
+
+                <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  <article className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Revenue Last 7 Days</p>
+                    {adminRevenueChart.length === 0 ? (
+                      <p className="mt-3 text-sm text-slate-600">No payment activity yet.</p>
+                    ) : (
+                      <div className="mt-4 grid h-52 grid-cols-7 items-end gap-2">
+                        {adminRevenueChart.map((item) => (
+                          <div key={item.label} className="flex min-w-0 flex-col items-center gap-2">
+                            <div className="h-36 w-full rounded-t-lg bg-slate-100 p-1">
+                              <div
+                                className="w-full rounded-md bg-[#173f56] transition-[height] duration-500"
+                                style={{ height: `${item.heightPercent}%` }}
+                                title={`${item.label}: ${formatVnd(item.revenueVnd)} (${item.transactions} tx)`}
+                              />
+                            </div>
+                            <p className="text-[11px] font-semibold text-slate-500">{item.label}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </article>
+
+                  <article className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Top Packages</p>
+                    <div className="mt-3 space-y-2">
+                      {(adminRevenue?.topPackages || []).length === 0 ? (
+                        <p className="text-sm text-slate-600">No paid package data available.</p>
+                      ) : (
+                        (adminRevenue?.topPackages || []).map((item) => (
+                          <div
+                            key={item.packageId}
+                            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+                          >
+                            <p className="font-bold text-slate-900">{toTitleCase(item.packageId || 'unknown')}</p>
+                            <p className="text-slate-600">
+                              {formatVnd(item.revenueVnd)} | {Number(item.transactions || 0)} tx | {Number(item.pointsSold || 0)} pts
+                            </p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </article>
+                </div>
+
+                <article className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Recent Payment Transactions</p>
+                  <div className="mt-3 space-y-2">
+                    {(adminRevenue?.recentTransactions || []).length === 0 ? (
+                      <p className="text-sm text-slate-600">No transactions found.</p>
+                    ) : (
+                      (adminRevenue?.recentTransactions || []).map((item) => (
+                        <div
+                          key={item.orderId}
+                          className="flex flex-col gap-2 rounded-xl border border-slate-200 px-3 py-2 md:flex-row md:items-center md:justify-between"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-bold text-slate-900">{item.orderId}</p>
+                            <p className="text-xs text-slate-600">
+                              {item.user?.fullName || '-'} | {item.user?.email || '-'}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {formatDateTime(item.createdAt)}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold uppercase tracking-wide text-slate-700">
+                              {toTitleCase(item.packageId || '-')}
+                            </span>
+                            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+                              {formatVnd(item.amount)}
+                            </span>
+                            <StatusBadge status={item.status} />
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </article>
+              </Panel>
 
               <Panel
                 title="Manage Users"
