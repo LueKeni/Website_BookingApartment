@@ -42,6 +42,8 @@ const apartmentSchema = new mongoose.Schema(
 		location: { type: locationSchema, required: true },
 		details: { type: detailsSchema, default: {} },
 		images: [{ type: String, trim: true }],
+		boostedAt: { type: Date, default: null },
+		boostCount: { type: Number, default: 0, min: 0 },
 		status: {
 			type: String,
 			enum: ['AVAILABLE', 'SOLD', 'RENTED', 'HIDDEN'],

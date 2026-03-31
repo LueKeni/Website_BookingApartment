@@ -46,6 +46,23 @@ PORT=5000
 MONGO_URI=mongodb://127.0.0.1:27017/apartment_booking
 JWT_SECRET=change_this_secret
 GOOGLE_CLIENT_ID=your_google_web_client_id
+MOMO_PARTNER_CODE=your_momo_partner_code
+MOMO_ACCESS_KEY=your_momo_access_key
+MOMO_SECRET_KEY=your_momo_secret_key
+MOMO_ENDPOINT=https://test-payment.momo.vn/v2/gateway/api/create
+MOMO_REDIRECT_URL=http://localhost:5173/payment/momo/return
+MOMO_IPN_URL=http://localhost:5000/api/payments/momo/ipn
+MOMO_REQUEST_TYPE=captureWallet
+POINTS_PER_BOOST=1
+
+# Optional: ASP.NET-style MoMo key aliases are also supported
+# MomoAPI__MomoApiUrl=https://test-payment.momo.vn/gw_payment/transactionProcessor
+# MomoAPI__SecretKey=your_secret_key
+# MomoAPI__AccessKey=your_access_key
+# MomoAPI__ReturnUrl=http://localhost:5173/payment/momo/return
+# MomoAPI__NotifyUrl=http://localhost:5000/api/payments/momo/ipn
+# MomoAPI__PartnerCode=MOMO
+# MomoAPI__RequestType=captureMoMoWallet
 
 ### client/.env
 
@@ -160,6 +177,7 @@ Optional overrides:
 - Auth: /api/auth/\*
 - Apartments: /api/apartments/\*
 - Bookings: /api/bookings/\*
+- Payments: /api/payments/*
 - Reviews: /api/reviews/\*
 - Users: /api/users/\*
 

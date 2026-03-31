@@ -1,5 +1,6 @@
 import express from 'express';
 import {
+  boostApartmentListing,
   createApartment,
   deleteApartment,
   getApartmentById,
@@ -16,6 +17,7 @@ router.get('/', getApartments);
 router.get('/:id', getApartmentById);
 router.post('/', protect, authorize('AGENT', 'ADMIN'), uploadApartmentImages, createApartment);
 router.put('/:id', protect, authorize('AGENT', 'ADMIN'), uploadApartmentImages, updateApartment);
+router.post('/:id/boost', protect, authorize('AGENT'), boostApartmentListing);
 router.patch('/:id/status', protect, authorize('AGENT', 'ADMIN'), updateApartmentStatus);
 router.delete('/:id', protect, authorize('AGENT', 'ADMIN'), deleteApartment);
 

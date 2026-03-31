@@ -10,6 +10,7 @@ import apartmentRoutes from './routes/apartmentRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 import bookingRoutes from './routes/bookingRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
+import paymentRoutes from './routes/paymentRoutes.js';
 import reviewRoutes from './routes/reviewRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import initSocket from './socket/socket.js';
@@ -42,6 +43,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/apartments', apartmentRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/chats', chatRoutes);
+app.use('/api/payments', paymentRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/users', userRoutes);
 

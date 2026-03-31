@@ -76,6 +76,15 @@ const formatPrice = (value) => {
   return `$${number.toLocaleString('en-US')}`;
 };
 
+const formatVnd = (value) => {
+  const number = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(number) || number <= 0) {
+    return '0 VND';
+  }
+
+  return `${Math.round(number).toLocaleString('vi-VN')} VND`;
+};
+
 const formatDateTime = (dateValue, timeValue) => {
   if (!dateValue) {
     return '-';
@@ -185,6 +194,46 @@ const StatusBadge = ({ status }) => {
   );
 };
 
+const StarRatingInput = ({ value = 5, onChange }) => {
+  const parsed = Number(value);
+  const safeValue = Number.isFinite(parsed) ? Math.min(5, Math.max(1, Math.round(parsed))) : 5;
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Rating</p>
+      <div className="mt-1.5 flex items-center gap-1" role="radiogroup" aria-label="Select rating">
+        {Array.from({ length: 5 }, (_, index) => {
+          const star = index + 1;
+          const isActive = star <= safeValue;
+
+          return (
+            <button
+              key={star}
+              type="button"
+              role="radio"
+              aria-checked={safeValue === star}
+              aria-label={`${star} star${star > 1 ? 's' : ''}`}
+              onClick={() => onChange(star)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/55"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                className={`h-5 w-5 ${isActive ? 'fill-amber-400 text-amber-400' : 'fill-transparent text-slate-300'}`}
+                stroke="currentColor"
+                strokeWidth="1.8"
+              >
+                <path d="M12 2.75l2.84 5.76 6.36.93-4.6 4.48 1.09 6.33L12 17.27 6.31 20.25l1.09-6.33L2.8 9.44l6.36-.93L12 2.75z" />
+              </svg>
+            </button>
+          );
+        })}
+        <span className="ml-1 text-sm font-semibold text-slate-700">{safeValue}/5</span>
+      </div>
+    </div>
+  );
+};
+
 const MapClickHandler = ({ onPinSelect }) => {
   useMapEvents({
     click(event) {
@@ -274,11 +323,18 @@ const Dashboard = () => {
   const [reviewMap, setReviewMap] = useState({});
   const [agentListingSearch, setAgentListingSearch] = useState('');
   const [agentListingStatusFilter, setAgentListingStatusFilter] = useState('ALL');
+  const [pointPackages, setPointPackages] = useState([]);
+  const [pointCostPerBoost, setPointCostPerBoost] = useState(1);
+  const [momoEnabled, setMomoEnabled] = useState(false);
+  const [loadingPointPackages, setLoadingPointPackages] = useState(false);
+  const [buyingPackageId, setBuyingPackageId] = useState('');
+  const [boostingApartmentId, setBoostingApartmentId] = useState('');
   const [adminUserSearch, setAdminUserSearch] = useState('');
   const [adminRoomSearch, setAdminRoomSearch] = useState('');
 
   const role = user?.role;
   const userId = getUserId(user);
+  const agentPoints = Number(user?.agentPoints || 0);
 
   const showSuccess = (message) => {
     setError('');
@@ -346,11 +402,95 @@ const Dashboard = () => {
     }
   };
 
+  const loadPointPackages = async () => {
+    if (role !== 'AGENT') {
+      return;
+    }
+
+    try {
+      setLoadingPointPackages(true);
+      const response = await api.get('/payments/packages');
+      const data = response?.data?.data || {};
+
+      setPointPackages(Array.isArray(data.packages) ? data.packages : []);
+      setPointCostPerBoost(Number(data.pointCostPerBoost || 1));
+      setMomoEnabled(Boolean(data.momoEnabled));
+    } catch (err) {
+      setPointPackages([]);
+      setPointCostPerBoost(1);
+      setMomoEnabled(false);
+      if (err?.response?.status === 404) {
+        setError('Payment API route not found. Restart backend and verify /api/payments is available.');
+        return;
+      }
+
+      setError(err?.response?.data?.message || 'Cannot load payment packages');
+    } finally {
+      setLoadingPointPackages(false);
+    }
+  };
+
+  const createMomoPayment = async (packageId) => {
+    if (!packageId) {
+      return;
+    }
+
+    try {
+      setBuyingPackageId(packageId);
+      const response = await api.post('/payments/momo/create', { packageId });
+      const payUrl = response?.data?.data?.payUrl;
+
+      if (!payUrl) {
+        setError('Cannot get MoMo payment URL. Please try again.');
+        return;
+      }
+
+      window.location.href = payUrl;
+    } catch (err) {
+      setSuccess('');
+      if (err?.response?.status === 404) {
+        setError('Payment API route not found. Restart backend and verify /api/payments is available.');
+        return;
+      }
+
+      setError(err?.response?.data?.message || 'Cannot create MoMo payment');
+    } finally {
+      setBuyingPackageId('');
+    }
+  };
+
+  const boostListingToTop = async (apartmentId) => {
+    try {
+      setBoostingApartmentId(apartmentId);
+      const response = await api.post(`/apartments/${apartmentId}/boost`);
+      await Promise.all([loadDashboardData(), refreshProfile()]);
+
+      const remainingPoints = Number(response?.data?.data?.remainingPoints);
+      if (Number.isFinite(remainingPoints)) {
+        showSuccess(`Listing promoted successfully. Remaining points: ${remainingPoints}.`);
+        return;
+      }
+
+      showSuccess('Listing promoted successfully.');
+    } catch (err) {
+      setSuccess('');
+      setError(err?.response?.data?.message || 'Cannot promote listing');
+    } finally {
+      setBoostingApartmentId('');
+    }
+  };
+
   useEffect(() => {
     if (isAuthenticated) {
       loadDashboardData();
     }
   }, [isAuthenticated, role, userId]);
+
+  useEffect(() => {
+    if (isAuthenticated && role === 'AGENT') {
+      loadPointPackages();
+    }
+  }, [isAuthenticated, role]);
 
   useEffect(() => {
     if (error) {
@@ -665,14 +805,20 @@ const Dashboard = () => {
 
   const submitReview = async (bookingId, rating, comment) => {
     try {
+      const matchedBooking = bookings.find((item) => String(item?._id) === String(bookingId));
+      if (matchedBooking?.review?._id) {
+        setError('You already submitted a review for this booking. Editing is disabled.');
+        return;
+      }
+
       const safeRating = Number(rating);
       if (!Number.isFinite(safeRating) || safeRating < 1 || safeRating > 5) {
-        setError('Rating must be a number from 1 to 5.');
+        setError('Rating must be selected from 1 to 5 stars.');
         return;
       }
 
       await api.post('/reviews', { bookingId, rating: safeRating, comment });
-      setReviewMap((prev) => ({ ...prev, [bookingId]: { rating: '', comment: '' } }));
+      setReviewMap((prev) => ({ ...prev, [bookingId]: { rating: 5, comment: '' } }));
       await loadDashboardData();
       showSuccess('Review submitted successfully.');
     } catch (err) {
@@ -950,45 +1096,53 @@ const Dashboard = () => {
                           </div>
                         </div>
 
-                        {booking.status === 'COMPLETED' && (
-                          <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
-                            <input
-                              placeholder="Rating (1-5)"
-                              value={reviewMap[booking._id]?.rating || ''}
-                              onChange={(event) =>
-                                setReviewMap((prev) => ({
-                                  ...prev,
-                                  [booking._id]: { ...(prev[booking._id] || {}), rating: event.target.value }
-                                }))
-                              }
-                              className={fieldClassName}
-                            />
-                            <input
-                              placeholder="Comment"
-                              value={reviewMap[booking._id]?.comment || ''}
-                              onChange={(event) =>
-                                setReviewMap((prev) => ({
-                                  ...prev,
-                                  [booking._id]: { ...(prev[booking._id] || {}), comment: event.target.value }
-                                }))
-                              }
-                              className={fieldClassName}
-                            />
-                            <button
-                              type="button"
-                              onClick={() =>
-                                submitReview(
-                                  booking._id,
-                                  reviewMap[booking._id]?.rating || 5,
-                                  reviewMap[booking._id]?.comment || ''
-                                )
-                              }
-                              className={primaryButtonClass}
-                            >
-                              Submit Review
-                            </button>
-                          </div>
-                        )}
+                        {booking.status === 'COMPLETED' &&
+                          (booking.review ? (
+                            <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm text-emerald-800">
+                              <p className="font-semibold">You already submitted a review for this booking.</p>
+                              <p className="mt-1">Rating: {Number(booking.review?.rating || 0).toFixed(1)}/5</p>
+                              <p className="mt-1 text-emerald-700">{booking.review?.comment || 'No comment provided.'}</p>
+                              <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                                Editing is disabled after submission.
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+                              <StarRatingInput
+                                value={reviewMap[booking._id]?.rating || 5}
+                                onChange={(nextRating) =>
+                                  setReviewMap((prev) => ({
+                                    ...prev,
+                                    [booking._id]: { ...(prev[booking._id] || {}), rating: nextRating }
+                                  }))
+                                }
+                              />
+                              <input
+                                placeholder="Comment"
+                                value={reviewMap[booking._id]?.comment || ''}
+                                onChange={(event) =>
+                                  setReviewMap((prev) => ({
+                                    ...prev,
+                                    [booking._id]: { ...(prev[booking._id] || {}), comment: event.target.value }
+                                  }))
+                                }
+                                className={fieldClassName}
+                              />
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  submitReview(
+                                    booking._id,
+                                    reviewMap[booking._id]?.rating || 5,
+                                    reviewMap[booking._id]?.comment || ''
+                                  )
+                                }
+                                className={primaryButtonClass}
+                              >
+                                Submit Review
+                              </button>
+                            </div>
+                          ))}
                       </article>
                     ))
                   )}
@@ -999,11 +1153,12 @@ const Dashboard = () => {
 
           {role === 'AGENT' && (
             <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
                 <StatCard label="Listings" value={agentStats.listings} />
                 <StatCard label="Completed Deals" value={agentStats.completed} />
                 <StatCard label="Pending Requests" value={agentStats.pending} />
                 <StatCard label="Response Rate" value={`${agentStats.responseRate}%`} />
+                <StatCard label="Point Balance" value={agentPoints} />
               </div>
 
               {isListingEditorOpen && (
@@ -1272,6 +1427,46 @@ const Dashboard = () => {
               )}
 
               <Panel
+                title="Promotion Points"
+                description={`Buy points with MoMo and push selected listings to the top. Each boost costs ${pointCostPerBoost} point(s).`}
+              >
+                {loadingPointPackages ? (
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                    {Array.from({ length: 3 }).map((_, index) => (
+                      <div key={index} className="loading-sheen h-28 rounded-2xl border border-slate-200 bg-white/75" />
+                    ))}
+                  </div>
+                ) : !momoEnabled ? (
+                  <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700">
+                    MoMo payment is not configured on the server yet. Please set MoMo environment variables before buying points.
+                  </p>
+                ) : pointPackages.length === 0 ? (
+                  <p className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600">
+                    No point packages available.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                    {pointPackages.map((item) => (
+                      <article key={item.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{item.name}</p>
+                        <p className="mt-2 text-2xl font-extrabold text-[#173f56]">{Number(item.points || 0)} points</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-700">{formatVnd(item.amountVnd)}</p>
+                        <p className="mt-2 text-xs text-slate-600">{item.description || 'Point package for listing promotion.'}</p>
+                        <button
+                          type="button"
+                          onClick={() => createMomoPayment(item.id)}
+                          disabled={buyingPackageId === item.id}
+                          className={`${primaryButtonClass} mt-3 w-full disabled:cursor-not-allowed disabled:opacity-60`}
+                        >
+                          {buyingPackageId === item.id ? 'Redirecting...' : 'Pay with MoMo'}
+                        </button>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </Panel>
+
+              <Panel
                 title="Manage Listings"
                 description="Control visibility and remove outdated properties."
                 action={
@@ -1359,6 +1554,11 @@ const Dashboard = () => {
                                 {toTitleCase(item.transactionType)} | {toTitleCase(item.roomType)} | {formatPrice(item.price)}
                               </p>
                               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Images: {listingImages.length}</p>
+                              {item.boostedAt && (
+                                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                                  Promoted: {formatDateTime(item.boostedAt)}
+                                </p>
+                              )}
                               {Number.isFinite(item.location?.latitude) && Number.isFinite(item.location?.longitude) && (
                                 <p className="text-sm text-slate-600">
                                   Map Pin: {item.location.latitude}, {item.location.longitude}
@@ -1381,6 +1581,14 @@ const Dashboard = () => {
                               className={primaryButtonClass}
                             >
                               Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => boostListingToTop(item._id)}
+                              disabled={boostingApartmentId === item._id || agentPoints < pointCostPerBoost}
+                              className={`${successButtonClass} disabled:cursor-not-allowed disabled:opacity-50`}
+                            >
+                              {boostingApartmentId === item._id ? 'Boosting...' : `Boost Top (-${pointCostPerBoost} pt)`}
                             </button>
                             <button
                               type="button"

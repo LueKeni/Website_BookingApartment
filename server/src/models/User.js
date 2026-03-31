@@ -34,6 +34,7 @@ const userSchema = new mongoose.Schema(
 			type: agentInfoSchema,
 			default: undefined
 		},
+		agentPoints: { type: Number, default: 0, min: 0 },
 		favorites: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Apartment' }]
 	},
 	{ timestamps: true }

@@ -1,11 +1,18 @@
 import Apartment from '../models/Apartment.js';
 import Booking from '../models/Booking.js';
 import mongoose from 'mongoose';
+import User from '../models/User.js';
 
 const ROOM_TYPE_ORDER = ['STUDIO', '1BR', '2BR', '3BR', 'DUPLEX', 'PENTHOUSE'];
 const MAX_APARTMENT_IMAGES = 8;
+const TOP_LISTING_SORT = { boostedAt: -1, createdAt: -1 };
 
 const isValidObjectId = (value) => typeof value === 'string' && mongoose.Types.ObjectId.isValid(value.trim());
+
+const getBoostPointCost = () => {
+  const parsed = Number.parseInt(process.env.POINTS_PER_BOOST || '1', 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+};
 
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -120,6 +127,10 @@ const parseApartmentPayload = (req) => {
     }
   }
 
+  // Promotion metadata is managed by dedicated APIs only.
+  delete payload.boostedAt;
+  delete payload.boostCount;
+
   return payload;
 };
 
@@ -219,7 +230,7 @@ const getApartments = async (req, res) => {
 
     const baseQuery = Apartment.find(filter)
       .populate('agentId', 'fullName email phone avatar role status agentInfo')
-      .sort({ createdAt: -1 });
+      .sort(TOP_LISTING_SORT);
 
     let apartments = [];
     let totalItems = 0;
@@ -235,11 +246,16 @@ const getApartments = async (req, res) => {
         const safeA = aIndex === -1 ? Number.MAX_SAFE_INTEGER : aIndex;
         const safeB = bIndex === -1 ? Number.MAX_SAFE_INTEGER : bIndex;
 
-        if (safeA === safeB) {
-          return new Date(b.createdAt) - new Date(a.createdAt);
+        if (safeA !== safeB) {
+          return sortOrder === 'desc' ? safeB - safeA : safeA - safeB;
         }
 
-        return sortOrder === 'desc' ? safeB - safeA : safeA - safeB;
+        const boostedDiff = new Date(b.boostedAt || 0) - new Date(a.boostedAt || 0);
+        if (boostedDiff !== 0) {
+          return boostedDiff;
+        }
+
+        return new Date(b.createdAt) - new Date(a.createdAt);
       });
 
       if (hasPagination) {
@@ -258,7 +274,7 @@ const getApartments = async (req, res) => {
 
       apartments = await Apartment.find(filter)
         .populate('agentId', 'fullName email phone avatar role status agentInfo')
-        .sort({ createdAt: -1 })
+        .sort(TOP_LISTING_SORT)
         .skip((currentPage - 1) * safeLimit)
         .limit(safeLimit);
     } else {
@@ -471,7 +487,70 @@ const deleteApartment = async (req, res) => {
   }
 };
 
+const boostApartmentListing = async (req, res) => {
+  const pointCost = getBoostPointCost();
+
+  try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid apartment id' });
+    }
+
+    const apartment = await Apartment.findById(req.params.id).select('agentId');
+
+    if (!apartment) {
+      return res.status(404).json({ success: false, message: 'Apartment not found' });
+    }
+
+    if (apartment.agentId.toString() !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+
+    const updatedUser = await User.findOneAndUpdate(
+      {
+        _id: req.user.id,
+        role: 'AGENT',
+        agentPoints: { $gte: pointCost }
+      },
+      {
+        $inc: { agentPoints: -pointCost }
+      },
+      { new: true }
+    ).select('agentPoints');
+
+    if (!updatedUser) {
+      return res.status(400).json({
+        success: false,
+        message: `Insufficient points. You need at least ${pointCost} point(s) to boost this listing.`
+      });
+    }
+
+    const promotedApartment = await Apartment.findOneAndUpdate(
+      { _id: req.params.id, agentId: req.user.id },
+      { $set: { boostedAt: new Date() }, $inc: { boostCount: 1 } },
+      { new: true }
+    );
+
+    if (!promotedApartment) {
+      await User.findByIdAndUpdate(req.user.id, { $inc: { agentPoints: pointCost } });
+      return res.status(404).json({ success: false, message: 'Apartment not found' });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Listing promoted to top successfully.',
+      data: {
+        apartment: promotedApartment,
+        pointCost,
+        remainingPoints: updatedUser.agentPoints
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 export {
+  boostApartmentListing,
   createApartment,
   deleteApartment,
   getApartmentById,

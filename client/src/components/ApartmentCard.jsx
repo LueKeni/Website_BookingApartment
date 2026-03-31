@@ -103,6 +103,11 @@ const ApartmentCard = ({ apartment, index = 0 }) => {
           <span className={`rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] ${statusClass}`}>
             {toLabel(apartment?.status)}
           </span>
+          {apartment?.boostedAt && (
+            <span className="rounded-full bg-amber-100 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-amber-700">
+              Top Boost
+            </span>
+          )}
         </div>
 
         <div className="absolute right-3 top-3 rounded-xl bg-[#0f2d3f]/92 px-3 py-2 text-right text-white shadow-lg">

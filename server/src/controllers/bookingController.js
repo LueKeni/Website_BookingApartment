@@ -1,5 +1,6 @@
 import Apartment from '../models/Apartment.js';
 import Booking from '../models/Booking.js';
+import Review from '../models/Review.js';
 
 const createBooking = async (req, res) => {
   try {
@@ -47,11 +48,37 @@ const getMyBookings = async (req, res) => {
       filter.agentId = req.user.id;
     }
 
-    const bookings = await Booking.find(filter)
+    let bookings = await Booking.find(filter)
       .populate('customerId', 'fullName email phone avatar status role')
       .populate('agentId', 'fullName email phone avatar status role agentInfo')
       .populate('apartmentId', 'title location transactionType price area status')
       .sort({ createdAt: -1 });
+
+    if (req.user.role === 'USER' && bookings.length) {
+      const bookingIds = bookings.map((booking) => booking._id);
+      const reviews = await Review.find({
+        customerId: req.user.id,
+        bookingId: { $in: bookingIds }
+      }).select('bookingId rating comment createdAt');
+
+      const reviewMap = new Map(reviews.map((review) => [review.bookingId.toString(), review]));
+
+      bookings = bookings.map((booking) => {
+        const bookingData = booking.toObject();
+        const review = reviewMap.get(booking._id.toString());
+
+        bookingData.review = review
+          ? {
+              _id: review._id,
+              rating: review.rating,
+              comment: review.comment || '',
+              createdAt: review.createdAt
+            }
+          : null;
+
+        return bookingData;
+      });
+    }
 
     return res.status(200).json({ success: true, data: bookings });
   } catch (error) {

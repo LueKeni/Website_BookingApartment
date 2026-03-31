@@ -18,7 +18,8 @@ const buildAuthResponse = (user) => {
       avatar: user.avatar,
       role: user.role,
       status: user.status,
-      agentInfo: user.agentInfo
+      agentInfo: user.agentInfo,
+      agentPoints: user.agentPoints || 0
     }
   };
 };

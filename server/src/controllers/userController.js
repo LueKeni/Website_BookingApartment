@@ -145,6 +145,7 @@ const updateProfile = async (req, res) => {
         role: updatedUser.role,
         status: updatedUser.status,
         agentInfo: updatedUser.agentInfo,
+        agentPoints: updatedUser.agentPoints || 0,
         favorites: updatedUser.favorites
       }
     });
